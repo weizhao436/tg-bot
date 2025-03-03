@@ -1,20 +1,5 @@
 #!/bin/bash
 
-# 检查Redis服务是否运行
-echo "检查Redis服务状态..."
-if ! pgrep redis-server > /dev/null; then
-    echo "Redis服务未运行，尝试启动..."
-    if command -v redis-server > /dev/null; then
-        redis-server --daemonize yes
-        echo "Redis服务已启动"
-    else
-        echo "警告: 找不到Redis服务器，请安装Redis: apt-get install redis-server"
-        echo "将使用传统文件监控方式进行按钮更新"
-    fi
-else
-    echo "Redis服务正在运行"
-fi
-
 # 启动后台管理系统
 echo "启动后台管理系统..."
 python3 admin_web.py &

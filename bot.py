@@ -13,9 +13,6 @@ from telegram import InputMediaPhoto, InputMediaVideo
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, Defaults, ContextTypes
 from telegram.ext import CallbackQueryHandler, ConversationHandler, JobQueue
 import fcntl
-import redis # type: ignore
-import threading
-from config import REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD, REDIS_CHANNEL, DB_PATH
 
 # 设置更详细的日志记录
 logging.basicConfig(
@@ -24,93 +21,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 确保数据库目录存在
-def ensure_db_directory():
-    """确保数据库目录存在"""
-    db_dir = os.path.dirname(DB_PATH)
-    if db_dir and not os.path.exists(db_dir):
-        try:
-            os.makedirs(db_dir, exist_ok=True)
-            logger.info(f"创建数据库目录: {db_dir}")
-        except Exception as e:
-            logger.error(f"创建数据库目录失败: {e}")
-            raise
-
 # 数据库设置
-def setup_database():
-    """创建数据库表结构"""
-    # 确保数据库目录存在
-    ensure_db_directory()
-    
-    # 连接数据库
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        # 创建按钮表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS buttons (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            position INTEGER,
-            text TEXT NOT NULL,
-            row INTEGER,
-            column INTEGER,
-            action TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        
-        # 创建回复表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS responses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            trigger TEXT NOT NULL,
-            response_text TEXT NOT NULL,
-            has_image INTEGER DEFAULT 0,
-            image_url TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        
-        # 检查是否需要插入默认按钮
-        cursor.execute("SELECT COUNT(*) FROM buttons")
-        if cursor.fetchone()[0] == 0:
-            buttons = [
-                (1, "🔍 搜索", 0, 0, "search"),
-                (2, "📢 最新活动", 0, 1, "latest_activities"),
-                (3, "🏠 主页", 1, 0, "homepage"),
-                (4, "👤 个人中心", 1, 1, "profile"),
-                (5, "📸 图片展示", 2, 0, "photo_gallery"),
-                (6, "📞 联系我们", 2, 1, "contact"),
-                (7, "❓ 帮助", 3, 0, "help")
-            ]
-            cursor.executemany("INSERT INTO buttons (position, text, row, column, action) VALUES (?, ?, ?, ?, ?)", buttons)
-        
-        # 检查是否需要插入默认回复
-        cursor.execute("SELECT COUNT(*) FROM responses")
-        if cursor.fetchone()[0] == 0:
-            responses = [
-                ("🔍 搜索", "请输入您要搜索的内容：", 0, ""),
-                ("🏠 主页", "🏠 欢迎访问西安娱乐导航主页\n\n我们提供西安地区最全面的娱乐信息和服务。\n请使用键盘按钮浏览不同功能。", 0, ""),
-                ("📞 联系我们", "📞 联系我们\n\n客服电话: 029-XXXXXXXX\n电子邮件: support@example.com\n工作时间: 周一至周日 9:00-21:00", 0, ""),
-                ("❓ 帮助", "可用命令:\n/start - 启动机器人\n/help - 显示此帮助消息\n/photo - 发送图片示例\n/video - 发送视频示例\n/admin - 管理员功能\n\n您也可以使用下方的键盘按钮快速访问功能。", 0, "")
-            ]
-            cursor.executemany("INSERT INTO responses (trigger, response_text, has_image, image_url) VALUES (?, ?, ?, ?)", responses)
-        
-        conn.commit()
-        logger.info("数据库初始化成功")
-    except sqlite3.Error as e:
-        logger.error(f"数据库初始化失败: {e}")
-        raise
-    finally:
-        if 'conn' in locals():
-            conn.close()
-
-# 数据库客户端
-redis_client = None
-
-# 活跃用户字典，用于实时通知
-active_users = {}
+DB_PATH = "/opt/telegram_bot/bot_data.db"
 
 # 按钮更新标志文件路径
 BUTTON_UPDATE_FLAG = os.path.join(os.path.dirname(__file__), 'button_update.flag')
@@ -118,133 +30,15 @@ BUTTON_UPDATE_FLAG = os.path.join(os.path.dirname(__file__), 'button_update.flag
 last_button_check = 0
 # 按钮缓存
 button_cache = None
-# 按钮更新锁，防止多线程冲突
-button_cache_lock = threading.Lock()
-
-# 初始化Redis
-def init_redis():
-    global redis_client
-    try:
-        redis_client = redis.Redis(
-            host=REDIS_HOST,
-            port=REDIS_PORT,
-            db=REDIS_DB,
-            password=REDIS_PASSWORD
-        )
-        logger.info("Redis客户端初始化成功")
-        return True
-    except Exception as e:
-        logger.error(f"Redis客户端初始化失败: {e}")
-        return False
-
-# Redis订阅线程
-def redis_subscriber():
-    """监听Redis中的按钮更新消息"""
-    global redis_client
-    
-    if not redis_client:
-        logger.error("Redis客户端未初始化，无法启动订阅")
-        return
-    
-    pubsub = redis_client.pubsub()
-    pubsub.subscribe(REDIS_CHANNEL)
-    
-    logger.info(f"开始监听Redis频道 {REDIS_CHANNEL} 的更新")
-    
-    for message in pubsub.listen():
-        if message['type'] == 'message':
-            try:
-                data = json.loads(message['data'])
-                logger.info(f"收到按钮更新消息: {data}")
-                
-                # 根据更新类型处理
-                action = data.get('action', 'update')
-                
-                # 无论什么操作，都清除按钮缓存，强制重新加载
-                with button_cache_lock:
-                    global button_cache
-                    button_cache = None
-                    logger.info("按钮缓存已清除，将在下次请求时重新加载")
-                
-                # 通知活跃用户
-                notify_active_users_about_update(data)
-                
-            except Exception as e:
-                logger.error(f"处理Redis消息时出错: {e}")
-
-# 通知活跃用户关于按钮更新
-async def notify_active_users_about_update(update_data=None):
-    """向活跃用户发送按钮更新通知"""
-    global active_users
-    
-    # 只通知最近10分钟活跃的用户
-    current_time = time.time()
-    active_threshold = current_time - 600  # 10分钟
-    
-    users_to_notify = []
-    for user_id, last_active in active_users.items():
-        if last_active > active_threshold:
-            users_to_notify.append(user_id)
-    
-    if not users_to_notify:
-        logger.info("没有活跃用户需要通知")
-        return
-    
-    try:
-        # 从main函数获取application实例
-        application = get_application_instance()
-        if not application:
-            logger.error("无法获取Application实例，无法发送通知")
-            return
-        
-        # 确定更新类型，自定义消息
-        action = update_data.get('action', 'update') if update_data else 'update'
-        button_data = update_data.get('data', {}) if update_data else {}
-        
-        if action == 'add':
-            message = f"📢 新按钮已添加: {button_data.get('text', '未知按钮')}"
-        elif action == 'delete':
-            message = f"📢 按钮已删除: {button_data.get('text', '未知按钮')}"
-        else:
-            message = "📢 按钮配置已更新，您将看到最新的键盘布局"
-        
-        # 向活跃用户发送通知
-        for user_id in users_to_notify:
-            try:
-                await application.bot.send_message(
-                    chat_id=user_id,
-                    text=message,
-                    reply_markup=get_main_keyboard()
-                )
-                logger.info(f"成功向用户 {user_id} 发送按钮更新通知")
-            except Exception as e:
-                logger.error(f"向用户 {user_id} 发送通知时出错: {e}")
-                
-    except Exception as e:
-        logger.error(f"通知活跃用户时出错: {e}")
-
-# 全局Application实例
-_application_instance = None
-
-def set_application_instance(app):
-    """设置全局Application实例，用于在非处理函数中发送消息"""
-    global _application_instance
-    _application_instance = app
-
-def get_application_instance():
-    """获取全局Application实例"""
-    global _application_instance
-    return _application_instance
 
 # 检查按钮是否有更新
 def check_button_updates():
     global last_button_check, button_cache
     
-    with button_cache_lock:
-        # 强制清除缓存，始终重新加载按钮数据
-        button_cache = None
-        last_button_check = time.time()
-        logger.info("重新加载按钮配置")
+    # 强制清除缓存，始终重新加载按钮数据
+    button_cache = None
+    last_button_check = time.time()
+    logger.info("重新加载按钮配置")
     return True
 
 # 从数据库加载按钮
@@ -311,6 +105,98 @@ def load_buttons_from_db():
 def get_main_keyboard():
     keyboard = load_buttons_from_db()
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+# 创建数据库和表
+def setup_database():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # 创建活动表
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS activities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        date TEXT,
+        image_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # 创建用户表
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        language_code TEXT,
+        last_activity TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # 创建响应表
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS responses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trigger_text TEXT NOT NULL,
+        response_text TEXT NOT NULL,
+        has_image INTEGER DEFAULT 0,
+        image_url TEXT,
+        version INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # 创建按钮表
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS buttons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        row INTEGER NOT NULL,
+        column INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # 插入一些示例数据
+    # 活动
+    cursor.execute("SELECT COUNT(*) FROM activities")
+    if cursor.fetchone()[0] == 0:
+        activities = [
+            ("周末音乐节", "来体验西安最热门的音乐盛宴！", "2025-03-08 20:00", "https://example.com/music.jpg"),
+            ("美食品鉴会", "品尝西安特色美食，感受舌尖上的陕西。", "2025-03-09 14:00", "https://example.com/food.jpg"),
+            ("电影首映礼", "最新大片抢先看，与明星近距离接触。", "2025-03-15 19:00", "https://example.com/movie.jpg")
+        ]
+        cursor.executemany("INSERT INTO activities (title, description, date, image_url) VALUES (?, ?, ?, ?)", activities)
+    
+    # 初始化按钮数据
+    cursor.execute("SELECT COUNT(*) FROM buttons")
+    if cursor.fetchone()[0] == 0:
+        buttons = [
+            (0, 0, "🔍 搜索"), (0, 1, "📢 最新活动"),
+            (1, 0, "🏠 主页"), (1, 1, "👤 个人中心"),
+            (2, 0, "📸 图片展示"), (2, 1, "📞 联系我们"),
+            (3, 0, "❓ 帮助"), (3, 1, "")
+        ]
+        cursor.executemany("INSERT INTO buttons (row, column, text) VALUES (?, ?, ?)", buttons)
+        logger.info("初始化按钮数据完成")
+    
+    # 初始化响应数据
+    cursor.execute("SELECT COUNT(*) FROM responses")
+    if cursor.fetchone()[0] == 0:
+        responses = [
+            ("🔍 搜索", "请输入您想搜索的西安景点或活动:", 0, ""),
+            ("🏠 主页", "欢迎访问西安娱乐导航主页！\n\n这里汇集了西安最新、最热门的活动信息。", 0, ""),
+            ("❓ 帮助", "有任何问题，请直接在对话框中输入您的问题，或使用键盘按钮浏览不同功能。", 0, "")
+        ]
+        cursor.executemany("INSERT INTO responses (trigger_text, response_text, has_image, image_url) VALUES (?, ?, ?, ?)", responses)
+        logger.info("初始化响应数据完成")
+    
+    conn.commit()
+    conn.close()
+    logger.info("数据库设置完成")
 
 # 定义命令处理程序
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -592,10 +478,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 更新用户最后活动时间
     update_user_activity(user.id)
     
-    # 记录活跃用户，用于实时推送
-    global active_users
-    active_users[user.id] = time.time()
-    
     logger.info(f"收到来自用户 {user.id} ({user.username}) 的消息: {text}")
     
     # 检查按钮是否有更新 - 由于没有使用 JobQueue，在每次消息处理时检查
@@ -842,35 +724,34 @@ async def refresh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     # 创建锁文件
     lock_file = open("/tmp/telegram_bot.lock", "w")
-    
     try:
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # 尝试获取独占锁
+        fcntl.lockf(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        logger.info("成功获取锁，确保只有一个实例在运行")
     except IOError:
-        logger.error("另一个机器人实例已经在运行")
+        logger.error("另一个实例已在运行。退出。")
         sys.exit(1)
     
-    # 初始化Redis
-    redis_success = init_redis()
-    if redis_success:
-        # 启动Redis订阅线程
-        subscriber_thread = threading.Thread(target=redis_subscriber, daemon=True)
-        subscriber_thread.start()
-        logger.info("已启动Redis订阅线程")
-    else:
-        logger.warning("Redis初始化失败，将使用文件监控方式检查按钮更新")
+    """启动机器人。"""
+    # 从环境变量获取 token
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
     
-    # 从配置文件读取token
-    try:
-        with open('config.json', 'r') as f:
-            config = json.load(f)
-            token = config.get('token')
-    except Exception as e:
-        logger.error(f"读取配置文件时出错: {e}")
-        token = None
+    # 如果环境变量未设置，尝试从配置文件读取
+    if not token:
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    token = config.get('token')
+        except Exception as e:
+            logger.error(f"读取配置文件出错: {e}")
     
     if not token:
-        logger.error("未找到有效的机器人token")
-        sys.exit(1)
+        logger.error("未找到Telegram Bot Token，请设置环境变量TELEGRAM_BOT_TOKEN或在config.json中配置")
+        return
+    
+    logger.info("正在初始化机器人...")
     
     try:
         # 设置数据库
@@ -893,9 +774,6 @@ def main():
         defaults = Defaults(parse_mode='HTML')  # 使用 HTML 解析模式
         application = Application.builder().token(token).defaults(defaults).build()
         logger.info("成功创建 Application 实例")
-        
-        # 保存全局应用实例，用于Redis通知
-        set_application_instance(application)
 
         # 使用 JobQueue 定期检查按钮更新
         job_queue = application.job_queue

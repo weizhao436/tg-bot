@@ -5,42 +5,18 @@ import os
 import time
 from functools import wraps
 from config import SECRET_KEY, ADMIN_USERNAME, ADMIN_PASSWORD, DB_PATH
-from config import REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD, REDIS_CHANNEL
-import redis
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
-# 初始化Redis连接
-redis_client = redis.Redis(
-    host=REDIS_HOST,
-    port=REDIS_PORT,
-    db=REDIS_DB,
-    password=REDIS_PASSWORD
-)
-
-# 按钮更新标志文件路径 (保留向后兼容)
+# 按钮更新标志文件路径
 BUTTON_UPDATE_FLAG = os.path.join(os.path.dirname(__file__), 'button_update.flag')
 
-# 更新按钮变更标志和通知Redis
-def update_button_change_flag(button_data=None, action="update"):
-    # 保留文件标志更新方式 (向后兼容)
+# 更新按钮变更标志
+def update_button_change_flag():
     with open(BUTTON_UPDATE_FLAG, 'w') as f:
         f.write(str(time.time()))
-    
-    # 通过Redis发布按钮更新消息
-    update_message = {
-        "timestamp": time.time(),
-        "action": action,  # "update", "add", "delete"
-        "data": button_data
-    }
-    
-    try:
-        redis_client.publish(REDIS_CHANNEL, json.dumps(update_message))
-        return True
-    except Exception as e:
-        print(f"Redis发布更新消息失败: {e}")
-        return False
+    return True
 
 # 创建按钮表和回复表
 def setup_database():
@@ -150,21 +126,12 @@ def edit_buttons():
         column = request.form.get('column')
         action = request.form.get('action')
         
-        button_data = {
-            "id": button_id,
-            "text": text,
-            "row": row,
-            "column": column,
-            "action": action
-        }
-        
         if button_id:  # 编辑现有按钮
             cursor.execute(
                 "UPDATE buttons SET text = ?, row = ?, column = ?, action = ? WHERE id = ?",
                 (text, row, column, action, button_id)
             )
             flash('按钮已更新！', 'success')
-            update_action = "update"
         else:  # 添加新按钮
             # 获取最大位置值
             cursor.execute("SELECT MAX(position) FROM buttons")
@@ -174,14 +141,11 @@ def edit_buttons():
                 "INSERT INTO buttons (position, text, row, column, action) VALUES (?, ?, ?, ?, ?)",
                 (max_position + 1, text, row, column, action)
             )
-            # 获取新插入按钮的ID
-            button_data["id"] = cursor.lastrowid
             flash('新按钮已添加！', 'success')
-            update_action = "add"
         
         conn.commit()
-        # 更新按钮变更标志，包含按钮数据和操作类型
-        update_button_change_flag(button_data, update_action)
+        # 更新按钮变更标志
+        update_button_change_flag()
     
     # 获取所有按钮
     cursor.execute("SELECT * FROM buttons ORDER BY row, column")
@@ -195,34 +159,16 @@ def edit_buttons():
 @login_required
 def delete_button(button_id):
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    # 先获取要删除的按钮信息
-    cursor.execute("SELECT * FROM buttons WHERE id = ?", (button_id,))
-    button = cursor.fetchone()
-    
-    if button:
-        # 转换为字典以便JSON序列化
-        button_data = {
-            "id": button["id"],
-            "text": button["text"],
-            "row": button["row"],
-            "column": button["column"],
-            "action": button["action"]
-        }
-        
-        cursor.execute("DELETE FROM buttons WHERE id = ?", (button_id,))
-        conn.commit()
-        
-        # 更新按钮变更标志，传递删除的按钮信息和操作类型
-        update_button_change_flag(button_data, "delete")
-        
-        flash('按钮已删除！', 'success')
-    else:
-        flash('按钮不存在！', 'error')
-    
+    cursor.execute("DELETE FROM buttons WHERE id = ?", (button_id,))
+    conn.commit()
     conn.close()
+    
+    # 更新按钮变更标志
+    update_button_change_flag()
+    
+    flash('按钮已删除！', 'success')
     return redirect(url_for('edit_buttons'))
 
 @app.route('/responses', methods=['GET', 'POST'])
