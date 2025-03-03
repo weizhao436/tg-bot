@@ -13,7 +13,7 @@ from telegram import InputMediaPhoto, InputMediaVideo
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, Defaults, ContextTypes
 from telegram.ext import CallbackQueryHandler, ConversationHandler, JobQueue
 import fcntl
-import redis
+import redis # type: ignore
 import threading
 from config import REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD, REDIS_CHANNEL, DB_PATH
 
