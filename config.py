@@ -1,6 +1,5 @@
 import sqlite3
 import os
-from config import DB_PATH
 
 # 基本配置
 SECRET_KEY = 'your-secret-key-change-this'  # 用于 Flask 会话
