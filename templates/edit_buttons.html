@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理按钮 - 机器人管理后台</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">西安娱乐导航机器人管理后台</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('dashboard') }}">仪表盘</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="{{ url_for('edit_buttons') }}">管理按钮</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('edit_responses') }}">管理回复</a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('logout') }}">退出登录</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">管理按钮</h5>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addButtonModal">
+                    <i class="bi bi-plus-circle"></i> 添加新按钮
+                </button>
+                
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>文本</th>
+                                <th>行</th>
+                                <th>列</th>
+                                <th>动作</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for button in buttons %}
+                            <tr>
+                                <td>{{ button.id }}</td>
+                                <td>{{ button.text }}</td>
+                                <td>{{ button.row }}</td>
+                                <td>{{ button.column }}</td>
+                                <td>{{ button.action }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-warning edit-button" 
+                                            data-id="{{ button.id }}"
+                                            data-text="{{ button.text }}"
+                                            data-row="{{ button.row }}"
+                                            data-column="{{ button.column }}"
+                                            data-action="{{ button.action }}">
+                                        <i class="bi bi-pencil"></i> 编辑
+                                    </button>
+                                    <button class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#deleteButtonModal{{ button.id }}">
+                                        <i class="bi bi-trash"></i> 删除
+                                    </button>
+                                    
+                                    <!-- 删除确认模态框 -->
+                                    <div class="modal fade" id="deleteButtonModal{{ button.id }}" tabindex="-1">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content">
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title">确认删除</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <p>确定要删除按钮 "{{ button.text }}" 吗？</p>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                                    <form action="{{ url_for('delete_button', button_id=button.id) }}" method="post">
+                                                        <button type="submit" class="btn btn-danger">确认删除</button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 按钮预览 -->
+        <div class="card shadow-sm mt-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">按钮预览</h5>
+            </div>
+            <div class="card-body">
+                <div class="keyboard-preview">
+                    {% set max_row = 0 %}
+                    {% for button in buttons %}
+                        {% if button.row > max_row %}
+                            {% set max_row = button.row %}
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% for row in range(max_row + 1) %}
+                        <div class="keyboard-row">
+                            {% for button in buttons %}
+                                {% if button.row == row %}
+                                    <button class="btn btn-outline-primary m-1">{{ button.text }}</button>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加按钮模态框 -->
+    <div class="modal fade" id="addButtonModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">添加新按钮</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="text" class="form-label">按钮文本</label>
+                            <input type="text" class="form-control" id="text" name="text" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="row" class="form-label">行 (从0开始)</label>
+                            <input type="number" class="form-control" id="row" name="row" min="0" value="0" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="column" class="form-label">列 (从0开始)</label>
+                            <input type="number" class="form-control" id="column" name="column" min="0" value="0" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="action" class="form-label">动作</label>
+                            <input type="text" class="form-control" id="action" name="action" required>
+                            <small class="text-muted">对应机器人代码中的函数名，如 search, homepage 等</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑按钮模态框 -->
+    <div class="modal fade" id="editButtonModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">编辑按钮</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post">
+                    <div class="modal-body">
+                        <input type="hidden" id="edit_button_id" name="button_id">
+                        <div class="mb-3">
+                            <label for="edit_text" class="form-label">按钮文本</label>
+                            <input type="text" class="form-control" id="edit_text" name="text" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_row" class="form-label">行 (从0开始)</label>
+                            <input type="number" class="form-control" id="edit_row" name="row" min="0" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_column" class="form-label">列 (从0开始)</label>
+                            <input type="number" class="form-control" id="edit_column" name="column" min="0" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_action" class="form-label">动作</label>
+                            <input type="text" class="form-control" id="edit_action" name="action" required>
+                            <small class="text-muted">对应机器人代码中的函数名，如 search, homepage 等</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary">保存更改</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 编辑按钮事件
+        document.querySelectorAll('.edit-button').forEach(button => {
+            button.addEventListener('click', function() {
+                const id = this.getAttribute('data-id');
+                const text = this.getAttribute('data-text');
+                const row = this.getAttribute('data-row');
+                const column = this.getAttribute('data-column');
+                const action = this.getAttribute('data-action');
+                
+                document.getElementById('edit_button_id').value = id;
+                document.getElementById('edit_text').value = text;
+                document.getElementById('edit_row').value = row;
+                document.getElementById('edit_column').value = column;
+                document.getElementById('edit_action').value = action;
+                
+                const editModal = new bootstrap.Modal(document.getElementById('editButtonModal'));
+                editModal.show();
+            });
+        });
+    </script>
+</body>
+</html> 
