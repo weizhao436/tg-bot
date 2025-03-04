@@ -104,4 +104,5 @@ else
     echo $BOT_PID > "$BOT_DIR/bot.pid"
     print_green "机器人已在后台启动，PID: $BOT_PID"
     print_yellow "查看日志: tail -f $LOG_FILE"
-    print_yellow "停止机器人: bash stop.sh" 
+    print_yellow "停止机器人: bash stop.sh"
+fi 

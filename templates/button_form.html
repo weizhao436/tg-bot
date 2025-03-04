@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Telegram Bot 管理面板{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h1>{{ title }}</h1>
+    </div>
+    <div class="col-md-6 text-end">
+        <a href="{{ url_for('buttons') }}" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-left"></i> 返回按钮列表
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-primary text-white">
+        按钮信息
+    </div>
+    <div class="card-body">
+        <form method="POST" novalidate>
+            {{ form.hidden_tag() }}
+            
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        {{ form.name.label(class="form-label") }}
+                        {{ form.name(class="form-control") }}
+                        <small class="form-text text-muted">内部标识，用于代码引用</small>
+                        {% if form.name.errors %}
+                            {% for error in form.name.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        {{ form.text.label(class="form-label") }}
+                        {{ form.text(class="form-control") }}
+                        <small class="form-text text-muted">显示在按钮上的文本</small>
+                        {% if form.text.errors %}
+                            {% for error in form.text.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        {{ form.callback_data.label(class="form-label") }}
+                        {{ form.callback_data(class="form-control") }}
+                        <small class="form-text text-muted">按钮点击时的回调数据</small>
+                        {% if form.callback_data.errors %}
+                            {% for error in form.callback_data.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        {{ form.url.label(class="form-label") }}
+                        {{ form.url(class="form-control") }}
+                        <small class="form-text text-muted">如果需要链接到外部URL</small>
+                        {% if form.url.errors %}
+                            {% for error in form.url.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        {{ form.position.label(class="form-label") }}
+                        {{ form.position(class="form-control") }}
+                        <small class="form-text text-muted">在同一行中的位置</small>
+                        {% if form.position.errors %}
+                            {% for error in form.position.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        {{ form.row.label(class="form-label") }}
+                        {{ form.row(class="form-control") }}
+                        <small class="form-text text-muted">在菜单中的行数</small>
+                        {% if form.row.errors %}
+                            {% for error in form.row.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group mt-4">
+                        <div class="form-check">
+                            {{ form.is_active(class="form-check-input") }}
+                            {{ form.is_active.label(class="form-check-label") }}
+                        </div>
+                        <small class="form-text text-muted">是否启用此按钮</small>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="d-grid gap-2">
+                {{ form.submit(class="btn btn-primary") }}
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %} 

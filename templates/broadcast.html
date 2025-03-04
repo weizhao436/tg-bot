@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+
+{% block title %}发送广播消息 - Telegram Bot 管理面板{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h1>发送广播消息</h1>
+        <p class="lead">向所有用户或选定用户组发送通知消息</p>
+    </div>
+    <div class="col-md-6 text-end">
+        <a href="{{ url_for('index') }}" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-left"></i> 返回首页
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-megaphone"></i> 新广播消息
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data" novalidate>
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ form.message_type.label(class="form-label") }}
+                            {{ form.message_type(class="form-select", id="messageType") }}
+                            <small class="form-text text-muted">发送的消息类型</small>
+                            {% if form.message_type.errors %}
+                                {% for error in form.message_type.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3" id="textMessageDiv">
+                        <div class="form-group">
+                            {{ form.text_content.label(class="form-label") }}
+                            {{ form.text_content(class="form-control", rows=5) }}
+                            <small class="form-text text-muted">消息内容，支持 Markdown 格式</small>
+                            {% if form.text_content.errors %}
+                                {% for error in form.text_content.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3 d-none" id="photoMessageDiv">
+                        <div class="form-group">
+                            {{ form.photo.label(class="form-label") }}
+                            {{ form.photo(class="form-control") }}
+                            <small class="form-text text-muted">选择要发送的图片文件 (支持 JPG, PNG, 最大 10MB)</small>
+                            {% if form.photo.errors %}
+                                {% for error in form.photo.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        
+                        <div class="form-group mt-3">
+                            {{ form.photo_caption.label(class="form-label") }}
+                            {{ form.photo_caption(class="form-control") }}
+                            <small class="form-text text-muted">图片说明文字 (可选)</small>
+                            {% if form.photo_caption.errors %}
+                                {% for error in form.photo_caption.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ form.target_users.label(class="form-label") }}
+                            {{ form.target_users(class="form-select") }}
+                            <small class="form-text text-muted">选择接收消息的用户群体</small>
+                            {% if form.target_users.errors %}
+                                {% for error in form.target_users.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ form.attached_button.label(class="form-label") }}
+                            {{ form.attached_button(class="form-select") }}
+                            <small class="form-text text-muted">添加一个按钮到消息底部 (可选)</small>
+                            {% if form.attached_button.errors %}
+                                {% for error in form.attached_button.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            {{ form.is_notification.raw_data or form.is_notification(class="form-check-input") }}
+                            {{ form.is_notification.label(class="form-check-label") }}
+                        </div>
+                        <small class="form-text text-muted">发送带通知的消息 (开启会发出提示音)</small>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        {{ form.preview(class="btn btn-secondary") }}
+                        {{ form.submit(class="btn btn-primary mt-2") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-info-circle"></i> 广播信息
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        总用户数
+                        <span class="badge bg-primary">{{ stats.total_users }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        活跃用户数 (7天内)
+                        <span class="badge bg-success">{{ stats.active_users }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        广播消息已发送数
+                        <span class="badge bg-secondary">{{ stats.broadcast_count }}</span>
+                    </li>
+                </ul>
+                
+                <div class="alert alert-warning mt-3">
+                    <i class="bi bi-exclamation-triangle"></i> <strong>注意事项：</strong>
+                    <ul class="mb-0 ps-3">
+                        <li>请勿滥用广播功能，以免被用户屏蔽</li>
+                        <li>每日最多发送3条广播消息</li>
+                        <li>图片大小不得超过10MB</li>
+                        <li>消息发送后无法撤回</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header bg-success text-white">
+                <i class="bi bi-clock-history"></i> 最近广播
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush">
+                    {% if recent_broadcasts %}
+                        {% for broadcast in recent_broadcasts %}
+                            <div class="list-group-item">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1">{{ broadcast.message_preview }}</h6>
+                                    <small>{{ broadcast.timestamp }}</small>
+                                </div>
+                                <div class="d-flex w-100 justify-content-between">
+                                    <small>发送至 {{ broadcast.target_group }}</small>
+                                    <small class="text-muted">成功率: {{ broadcast.success_rate }}%</small>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="list-group-item text-center text-muted py-4">
+                            <em>暂无广播记录</em>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 预览模态框 -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">消息预览</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="previewContent">
+                <div class="d-flex justify-content-center mb-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                </div>
+                <p class="text-center">正在生成预览...</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 根据消息类型显示/隐藏相应的输入区域
+        var messageType = document.getElementById('messageType');
+        var textMessageDiv = document.getElementById('textMessageDiv');
+        var photoMessageDiv = document.getElementById('photoMessageDiv');
+        
+        function updateMessageTypeUI() {
+            if (messageType.value === 'text') {
+                textMessageDiv.classList.remove('d-none');
+                photoMessageDiv.classList.add('d-none');
+            } else if (messageType.value === 'photo') {
+                textMessageDiv.classList.add('d-none');
+                photoMessageDiv.classList.remove('d-none');
+            }
+        }
+        
+        if (messageType) {
+            updateMessageTypeUI();
+            messageType.addEventListener('change', updateMessageTypeUI);
+        }
+        
+        // 处理预览请求
+        var previewForm = document.querySelector('form');
+        var previewBtn = document.querySelector('input[name="preview"]');
+        var previewModal = document.getElementById('previewModal');
+        var previewContent = document.getElementById('previewContent');
+        
+        if (previewBtn && previewForm && previewModal) {
+            previewBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // 显示模态框和加载中状态
+                var bootstrapModal = new bootstrap.Modal(previewModal);
+                bootstrapModal.show();
+                
+                // 创建FormData对象
+                var formData = new FormData(previewForm);
+                formData.append('preview_only', 'true');
+                
+                // 发送预览请求
+                fetch('{{ url_for("preview_broadcast") }}', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // 更新预览内容
+                    if (data.success) {
+                        previewContent.innerHTML = data.preview_html;
+                    } else {
+                        previewContent.innerHTML = '<div class="alert alert-danger">' + data.error + '</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    previewContent.innerHTML = '<div class="alert alert-danger">预览生成失败</div>';
+                });
+            });
+        }
+    });
+</script>
+{% endblock %}

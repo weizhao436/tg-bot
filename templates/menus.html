@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}菜单管理 - Telegram Bot 管理面板{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h1>菜单管理</h1>
+    </div>
+    <div class="col-md-6 text-end">
+        <a href="{{ url_for('add_menu') }}" class="btn btn-success">
+            <i class="bi bi-plus-circle"></i> 添加新菜单
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-primary text-white">
+        菜单列表
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>名称</th>
+                        <th>标题</th>
+                        <th>描述</th>
+                        <th>状态</th>
+                        <th>按钮数量</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if menus %}
+                        {% for menu in menus %}
+                        <tr>
+                            <td>{{ menu.id }}</td>
+                            <td>{{ menu.name }}</td>
+                            <td>{{ menu.title }}</td>
+                            <td>{{ menu.description or '-' }}</td>
+                            <td>
+                                {% if menu.is_active %}
+                                <span class="badge bg-success">启用</span>
+                                {% else %}
+                                <span class="badge bg-danger">禁用</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% set button_count = menu.get('button_count', 0) %}
+                                <span class="badge bg-info">{{ button_count }}</span>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('menu_buttons', menu_id=menu.id) }}" class="btn btn-outline-info">
+                                        <i class="bi bi-grid"></i> 管理按钮
+                                    </a>
+                                    <a href="{{ url_for('preview_menu', menu_id=menu.id) }}" class="btn btn-outline-success">
+                                        <i class="bi bi-eye"></i> 预览
+                                    </a>
+                                    <a href="{{ url_for('edit_menu', menu_id=menu.id) }}" class="btn btn-outline-primary">
+                                        <i class="bi bi-pencil"></i> 编辑
+                                    </a>
+                                    <button type="button" class="btn btn-outline-danger" 
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#deleteModal" 
+                                            data-id="{{ menu.id }}"
+                                            data-name="{{ menu.title }}">
+                                        <i class="bi bi-trash"></i> 删除
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center">暂无菜单数据</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                确定要删除菜单 "<span id="menuName"></span>" 吗？此操作不可撤销，并且会同时删除此菜单与按钮的所有关联。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form id="deleteForm" method="POST" action="">
+                    <button type="submit" class="btn btn-danger">确认删除</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 处理删除菜单模态框
+        var deleteModal = document.getElementById('deleteModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function(event) {
+                var button = event.relatedTarget;
+                var id = button.getAttribute('data-id');
+                var name = button.getAttribute('data-name');
+                
+                // 更新模态框内容
+                document.getElementById('menuName').textContent = name;
+                
+                // 设置表单动作
+                document.getElementById('deleteForm').action = "{{ url_for('delete_menu', menu_id=0) }}".replace('0', id);
+            });
+        }
+    });
+</script>
+{% endblock %} 

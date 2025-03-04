@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Telegram Bot 管理面板{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h1>{{ title }}</h1>
+    </div>
+    <div class="col-md-6 text-end">
+        <a href="{{ url_for('menus') }}" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-left"></i> 返回菜单列表
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-primary text-white">
+        菜单信息
+    </div>
+    <div class="card-body">
+        <form method="POST" novalidate>
+            {{ form.hidden_tag() }}
+            
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        {{ form.name.label(class="form-label") }}
+                        {{ form.name(class="form-control") }}
+                        <small class="form-text text-muted">内部标识，用于代码引用</small>
+                        {% if form.name.errors %}
+                            {% for error in form.name.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        {{ form.title.label(class="form-label") }}
+                        {{ form.title(class="form-control") }}
+                        <small class="form-text text-muted">菜单的显示标题</small>
+                        {% if form.title.errors %}
+                            {% for error in form.title.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mb-3">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        {{ form.description.label(class="form-label") }}
+                        {{ form.description(class="form-control", rows=4) }}
+                        <small class="form-text text-muted">菜单说明</small>
+                        {% if form.description.errors %}
+                            {% for error in form.description.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mb-3">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <div class="form-check">
+                            {{ form.is_active(class="form-check-input") }}
+                            {{ form.is_active.label(class="form-check-label") }}
+                        </div>
+                        <small class="form-text text-muted">是否启用此菜单</small>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="d-grid gap-2">
+                {{ form.submit(class="btn btn-primary") }}
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %} 

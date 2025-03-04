@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+
+{% block title %}系统日志 - Telegram Bot 管理面板{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h1>系统日志</h1>
+    </div>
+    <div class="col-md-6 text-end">
+        <div class="btn-group">
+            <a href="{{ url_for('export_logs') }}" class="btn btn-outline-primary">
+                <i class="bi bi-download"></i> 导出日志
+            </a>
+            <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearLogsModal">
+                <i class="bi bi-trash"></i> 清空日志
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        <div class="row align-items-center">
+            <div class="col-md-4">
+                <i class="bi bi-list-check"></i> 日志记录
+            </div>
+            <div class="col-md-8">
+                <form method="GET" action="{{ url_for('logs') }}" class="d-flex">
+                    <select name="log_type" class="form-select form-select-sm me-2" onchange="this.form.submit()">
+                        <option value="all" {% if log_type == 'all' %}selected{% endif %}>所有类型</option>
+                        <option value="info" {% if log_type == 'info' %}selected{% endif %}>信息</option>
+                        <option value="warning" {% if log_type == 'warning' %}selected{% endif %}>警告</option>
+                        <option value="error" {% if log_type == 'error' %}selected{% endif %}>错误</option>
+                        <option value="system" {% if log_type == 'system' %}selected{% endif %}>系统</option>
+                    </select>
+                    <input type="text" name="search" class="form-control form-control-sm me-2" placeholder="搜索..." value="{{ search }}">
+                    <button type="submit" class="btn btn-sm btn-light">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>时间</th>
+                        <th>类型</th>
+                        <th>来源</th>
+                        <th>详情</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if logs %}
+                        {% for log in logs %}
+                        <tr>
+                            <td style="width: 170px;">{{ log.timestamp }}</td>
+                            <td style="width: 100px;">
+                                {% if log.level == 'INFO' %}
+                                <span class="badge bg-info">信息</span>
+                                {% elif log.level == 'WARNING' %}
+                                <span class="badge bg-warning">警告</span>
+                                {% elif log.level == 'ERROR' %}
+                                <span class="badge bg-danger">错误</span>
+                                {% elif log.level == 'SYSTEM' %}
+                                <span class="badge bg-secondary">系统</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ log.level }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="width: 120px;">{{ log.source }}</td>
+                            <td>{{ log.message }}</td>
+                            <td style="width: 80px;">
+                                <button type="button" class="btn btn-sm btn-outline-info"
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#logDetailModal" 
+                                        data-id="{{ log.id }}"
+                                        data-timestamp="{{ log.timestamp }}"
+                                        data-level="{{ log.level }}"
+                                        data-source="{{ log.source }}"
+                                        data-message="{{ log.message }}"
+                                        data-details="{{ log.details }}">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center">暂无日志记录或无符合条件的记录</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    {% if total_pages > 1 %}
+    <div class="card-footer">
+        <nav>
+            <ul class="pagination justify-content-center">
+                <li class="page-item {% if page == 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('logs', page=page-1, log_type=log_type, search=search) if page > 1 else '#' }}">上一页</a>
+                </li>
+                
+                {% for i in range(1, total_pages + 1) %}
+                    {% if i <= 3 or i >= total_pages - 2 or i == page or i == page - 1 or i == page + 1 %}
+                        <li class="page-item {% if i == page %}active{% endif %}">
+                            <a class="page-link" href="{{ url_for('logs', page=i, log_type=log_type, search=search) }}">{{ i }}</a>
+                        </li>
+                    {% elif i == 4 and page > 5 %}
+                        <li class="page-item disabled">
+                            <span class="page-link">...</span>
+                        </li>
+                    {% elif i == total_pages - 3 and page < total_pages - 4 %}
+                        <li class="page-item disabled">
+                            <span class="page-link">...</span>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+                
+                <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('logs', page=page+1, log_type=log_type, search=search) if page < total_pages else '#' }}">下一页</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 日志详情模态框 -->
+<div class="modal fade" id="logDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">日志详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>时间：</strong>
+                        <span id="logTimestamp"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>类型：</strong>
+                        <span id="logLevel"></span>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <strong>来源：</strong>
+                        <span id="logSource"></span>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <strong>消息：</strong>
+                        <p id="logMessage"></p>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <strong>详细信息：</strong>
+                        <pre id="logDetails" class="bg-light p-3 rounded" style="max-height: 300px; overflow-y: auto;"></pre>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 清空日志确认模态框 -->
+<div class="modal fade" id="clearLogsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">确认清空日志</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> 此操作将删除所有日志记录，且不可恢复！
+                </div>
+                <p>确定要清空所有日志吗？</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form method="POST" action="{{ url_for('clear_logs') }}">
+                    <button type="submit" class="btn btn-danger">确认清空</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 处理日志详情模态框
+        var logDetailModal = document.getElementById('logDetailModal');
+        if (logDetailModal) {
+            logDetailModal.addEventListener('show.bs.modal', function(event) {
+                var button = event.relatedTarget;
+                var timestamp = button.getAttribute('data-timestamp');
+                var level = button.getAttribute('data-level');
+                var source = button.getAttribute('data-source');
+                var message = button.getAttribute('data-message');
+                var details = button.getAttribute('data-details');
+                
+                // 更新模态框内容
+                document.getElementById('logTimestamp').textContent = timestamp;
+                document.getElementById('logLevel').textContent = level;
+                document.getElementById('logSource').textContent = source;
+                document.getElementById('logMessage').textContent = message;
+                document.getElementById('logDetails').textContent = details || '无详细信息';
+            });
+        }
+    });
+</script>
+{% endblock %} 

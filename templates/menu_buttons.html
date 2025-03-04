@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block title %}管理菜单按钮 - Telegram Bot 管理面板{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h1>管理 "{{ menu.title }}" 菜单按钮</h1>
+    </div>
+    <div class="col-md-6 text-end">
+        <div class="btn-group">
+            <a href="{{ url_for('menus') }}" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left"></i> 返回菜单列表
+            </a>
+            <a href="{{ url_for('preview_menu', menu_id=menu.id) }}" class="btn btn-outline-success">
+                <i class="bi bi-eye"></i> 预览菜单
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                当前按钮列表
+            </div>
+            <div class="card-body p-0">
+                {% if menu_buttons %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>名称</th>
+                                <th>文本</th>
+                                <th>位置</th>
+                                <th>行</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for button in menu_buttons %}
+                            <tr>
+                                <td>{{ button.id }}</td>
+                                <td>{{ button.name }}</td>
+                                <td>{{ button.text }}</td>
+                                <td>{{ button.position }}</td>
+                                <td>{{ button.row }}</td>
+                                <td>
+                                    {% if button.is_active %}
+                                    <span class="badge bg-success">启用</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">禁用</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{{ url_for('edit_button', button_id=button.id) }}" class="btn btn-outline-primary">
+                                            <i class="bi bi-pencil"></i> 编辑
+                                        </a>
+                                        <button type="button" class="btn btn-outline-danger" 
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#removeModal" 
+                                                data-id="{{ button.id }}"
+                                                data-name="{{ button.text }}">
+                                            <i class="bi bi-x-circle"></i> 移除
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info m-3">
+                    此菜单暂无按钮，请从右侧添加按钮。
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                添加按钮到菜单
+            </div>
+            <div class="card-body">
+                {% if has_available_buttons %}
+                <form method="POST" novalidate>
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ form.button_id.label(class="form-label") }}
+                            {{ form.button_id(class="form-select") }}
+                            {% if form.button_id.errors %}
+                                {% for error in form.button_id.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                {{ form.position.label(class="form-label") }}
+                                {{ form.position(class="form-control") }}
+                                <small class="form-text text-muted">在同一行中的位置</small>
+                                {% if form.position.errors %}
+                                    {% for error in form.position.errors %}
+                                        <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                {{ form.row.label(class="form-label") }}
+                                {{ form.row(class="form-control") }}
+                                <small class="form-text text-muted">在菜单中的行数</small>
+                                {% if form.row.errors %}
+                                    {% for error in form.row.errors %}
+                                        <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        {{ form.submit(class="btn btn-success") }}
+                    </div>
+                </form>
+                {% else %}
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> 没有可添加的按钮。请先 <a href="{{ url_for('add_button') }}" class="alert-link">创建新按钮</a>。
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                菜单信息
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        ID
+                        <span class="badge bg-primary">{{ menu.id }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        名称
+                        <span>{{ menu.name }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        状态
+                        {% if menu.is_active %}
+                        <span class="badge bg-success">启用</span>
+                        {% else %}
+                        <span class="badge bg-danger">禁用</span>
+                        {% endif %}
+                    </li>
+                    <li class="list-group-item">
+                        <strong>描述:</strong><br>
+                        {{ menu.description or '无描述' }}
+                    </li>
+                </ul>
+            </div>
+            <div class="card-footer text-center">
+                <a href="{{ url_for('edit_menu', menu_id=menu.id) }}" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-pencil"></i> 编辑菜单
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 移除按钮确认模态框 -->
+<div class="modal fade" id="removeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">确认移除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                确定要从此菜单中移除按钮 "<span id="buttonName"></span>" 吗？此操作不会删除按钮本身，只会解除与当前菜单的关联。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form id="removeForm" method="POST" action="">
+                    <button type="submit" class="btn btn-danger">确认移除</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 处理移除按钮模态框
+        var removeModal = document.getElementById('removeModal');
+        if (removeModal) {
+            removeModal.addEventListener('show.bs.modal', function(event) {
+                var button = event.relatedTarget;
+                var id = button.getAttribute('data-id');
+                var name = button.getAttribute('data-name');
+                
+                // 更新模态框内容
+                document.getElementById('buttonName').textContent = name;
+                
+                // 设置表单动作
+                document.getElementById('removeForm').action = "{{ url_for('remove_button_from_menu', menu_id=menu.id, button_id=0) }}".replace('0', id);
+            });
+        }
+    });
+</script>
+{% endblock %} 

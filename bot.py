@@ -18,7 +18,7 @@ from logging.handlers import RotatingFileHandler
 
 # 尝试导入Telegram相关库
 try:
-    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
+    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
     from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters, Defaults
     from telegram.error import TelegramError
 except ImportError:
@@ -30,7 +30,7 @@ try:
     from config import (BOT_TOKEN, BASE_DIR, DATA_DIR, LOG_DIR, 
                         LOCK_FILE, DB_PATH, LOG_LEVEL, LOG_MAX_SIZE, 
                         LOG_BACKUP_COUNT, ADMIN_PORT_START, ADMIN_PORT_END,
-                        API_URL, UPDATE_CHECK_INTERVAL)
+                        API_URL, UPDATE_CHECK_INTERVAL, BUTTON_CHECK_INTERVAL)
     print("✅ 已成功导入配置")
 except ImportError:
     print("错误: 未找到config.py文件")
@@ -73,6 +73,11 @@ logger.info(f"数据目录: {DATA_DIR}")
 # ======== 全局变量 ========
 # 按钮更新标志
 BUTTON_UPDATE_FLAG = False
+
+# 按钮缓存
+button_update_time = 0
+button_cache = {}
+MAIN_MENU_NAME = "main_menu"  # 主菜单名称
 
 # ======== 数据库函数 ========
 def setup_database():

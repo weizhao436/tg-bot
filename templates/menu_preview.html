@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}预览菜单 - Telegram Bot 管理面板{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h1>预览 "{{ menu.title }}" 菜单</h1>
+    </div>
+    <div class="col-md-6 text-end">
+        <div class="btn-group">
+            <a href="{{ url_for('menu_buttons', menu_id=menu.id) }}" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left"></i> 返回菜单按钮管理
+            </a>
+            <a href="{{ url_for('menus') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-list"></i> 菜单列表
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-7">
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                按钮预览 (模拟Telegram界面)
+            </div>
+            <div class="card-body bg-light">
+                <div class="d-flex flex-column justify-content-end pb-3" style="min-height: 300px;">
+                    <div class="chat-bubble mb-3 align-self-start bg-white p-3 rounded shadow-sm">
+                        <strong>Telegram Bot:</strong><br>
+                        {{ menu.description or '请选择以下选项:' }}
+                    </div>
+                    
+                    <div class="telegram-keyboard bg-white p-2 rounded shadow-sm">
+                        {% if rows %}
+                            {% for row in rows %}
+                                <div class="d-flex flex-wrap mb-2">
+                                    {% for button in row %}
+                                        {% if button.url %}
+                                        <a href="{{ button.url }}" target="_blank" class="btn btn-outline-primary preview-button m-1">
+                                            {{ button.text }}
+                                        </a>
+                                        {% else %}
+                                        <button class="btn btn-outline-primary preview-button m-1">
+                                            {{ button.text }}
+                                        </button>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="alert alert-info m-2">
+                                此菜单暂无按钮
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-5">
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                菜单详情
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        ID
+                        <span class="badge bg-primary">{{ menu.id }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        名称
+                        <span>{{ menu.name }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        标题
+                        <span>{{ menu.title }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        状态
+                        {% if menu.is_active %}
+                        <span class="badge bg-success">启用</span>
+                        {% else %}
+                        <span class="badge bg-danger">禁用</span>
+                        {% endif %}
+                    </li>
+                    <li class="list-group-item">
+                        <strong>描述:</strong><br>
+                        {{ menu.description or '无描述' }}
+                    </li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                按钮组成
+            </div>
+            <div class="card-body">
+                <h5>按钮布局</h5>
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>行</th>
+                            <th>位置</th>
+                            <th>按钮文本</th>
+                            <th>类型</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if rows %}
+                            {% for row_buttons in rows %}
+                                {% for button in row_buttons %}
+                                <tr>
+                                    <td>{{ button.row }}</td>
+                                    <td>{{ button.position }}</td>
+                                    <td>{{ button.text }}</td>
+                                    <td>
+                                        {% if button.url %}
+                                        <span class="badge bg-primary">URL</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">回调</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center">暂无按钮</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+                
+                <div class="text-center mt-3">
+                    <a href="{{ url_for('menu_buttons', menu_id=menu.id) }}" class="btn btn-primary">
+                        <i class="bi bi-grid"></i> 管理按钮
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chat-bubble {
+        max-width: 80%;
+        border-radius: 18px;
+    }
+    .telegram-keyboard {
+        border-radius: 10px;
+        width: 100%;
+    }
+</style>
+{% endblock %} 

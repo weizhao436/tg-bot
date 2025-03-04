@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}首页 - Telegram Bot 管理面板{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h1>Telegram Bot 管理面板</h1>
+        <p class="lead">欢迎使用 Telegram Bot 管理面板，在这里您可以管理您的机器人菜单、按钮和功能。</p>
+    </div>
+    <div class="col-md-4 text-end">
+        <div class="btn-group">
+            <a href="{{ url_for('start_bot') }}" class="btn btn-success">
+                <i class="bi bi-play-fill"></i> 启动机器人
+            </a>
+            <a href="{{ url_for('stop_bot') }}" class="btn btn-danger">
+                <i class="bi bi-stop-fill"></i> 停止机器人
+            </a>
+            <a href="{{ url_for('restart_bot') }}" class="btn btn-warning">
+                <i class="bi bi-arrow-clockwise"></i> 重启机器人
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- 统计卡片 -->
+    <div class="col-md-3 mb-3">
+        <div class="card border-primary h-100">
+            <div class="card-body text-center">
+                <h5 class="card-title text-primary">
+                    <i class="bi bi-people-fill"></i> 用户数
+                </h5>
+                <p class="display-4">{{ stats.user_count }}</p>
+                <p class="text-muted">注册用户总数</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card border-success h-100">
+            <div class="card-body text-center">
+                <h5 class="card-title text-success">
+                    <i class="bi bi-chat-dots-fill"></i> 消息数
+                </h5>
+                <p class="display-4">{{ stats.message_count }}</p>
+                <p class="text-muted">接收的消息总数</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card border-info h-100">
+            <div class="card-body text-center">
+                <h5 class="card-title text-info">
+                    <i class="bi bi-grid-fill"></i> 按钮数
+                </h5>
+                <p class="display-4">{{ stats.button_count }}</p>
+                <p class="text-muted">系统中的按钮总数</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card border-warning h-100">
+            <div class="card-body text-center">
+                <h5 class="card-title text-warning">
+                    <i class="bi bi-list"></i> 菜单数
+                </h5>
+                <p class="display-4">{{ stats.menu_count }}</p>
+                <p class="text-muted">系统中的菜单总数</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 最近活动 -->
+    <div class="col-md-8 mb-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-activity"></i> 最近活动
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>时间</th>
+                                <th>类型</th>
+                                <th>详情</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if recent_activities %}
+                                {% for activity in recent_activities %}
+                                <tr>
+                                    <td>{{ activity.timestamp }}</td>
+                                    <td>
+                                        {% if activity.type == 'message' %}
+                                        <span class="badge bg-success">消息</span>
+                                        {% elif activity.type == 'command' %}
+                                        <span class="badge bg-primary">命令</span>
+                                        {% elif activity.type == 'callback' %}
+                                        <span class="badge bg-info">回调</span>
+                                        {% elif activity.type == 'error' %}
+                                        <span class="badge bg-danger">错误</span>
+                                        {% elif activity.type == 'system' %}
+                                        <span class="badge bg-warning">系统</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">其他</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ activity.details }}</td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="3" class="text-center">暂无活动记录</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer text-center">
+                <a href="{{ url_for('logs') }}" class="btn btn-sm btn-outline-primary">查看全部日志</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快速操作和系统信息 -->
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <i class="bi bi-lightning-fill"></i> 快速操作
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    <a href="{{ url_for('add_button') }}" class="list-group-item list-group-item-action">
+                        <i class="bi bi-plus-circle"></i> 添加新按钮
+                    </a>
+                    <a href="{{ url_for('add_menu') }}" class="list-group-item list-group-item-action">
+                        <i class="bi bi-plus-circle"></i> 添加新菜单
+                    </a>
+                    <a href="{{ url_for('broadcast') }}" class="list-group-item list-group-item-action">
+                        <i class="bi bi-megaphone"></i> 发送广播消息
+                    </a>
+                    <a href="{{ url_for('settings') }}" class="list-group-item list-group-item-action">
+                        <i class="bi bi-gear"></i> 系统设置
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-info-circle"></i> 系统信息
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>机器人状态</span>
+                        {% if bot_running %}
+                        <span class="badge bg-success">运行中</span>
+                        {% else %}
+                        <span class="badge bg-danger">已停止</span>
+                        {% endif %}
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>上次启动</span>
+                        <span>{{ system_info.last_start or '未知' }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>运行时间</span>
+                        <span>{{ system_info.uptime or '0' }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Python 版本</span>
+                        <span>{{ system_info.python_version }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>系统负载</span>
+                        <span>{{ system_info.system_load or '0%' }}</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

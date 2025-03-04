@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+
+{% block title %}系统设置 - Telegram Bot 管理面板{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h1>系统设置</h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-robot"></i> 机器人配置
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_bot_settings') }}" novalidate>
+                    {{ bot_form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ bot_form.token.label(class="form-label") }}
+                            {{ bot_form.token(class="form-control") }}
+                            <small class="form-text text-muted">从 BotFather 获取的 API 令牌</small>
+                            {% if bot_form.token.errors %}
+                                {% for error in bot_form.token.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ bot_form.default_menu_id.label(class="form-label") }}
+                            {{ bot_form.default_menu_id(class="form-select") }}
+                            <small class="form-text text-muted">默认显示的菜单</small>
+                            {% if bot_form.default_menu_id.errors %}
+                                {% for error in bot_form.default_menu_id.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ bot_form.welcome_message.label(class="form-label") }}
+                            {{ bot_form.welcome_message(class="form-control", rows=3) }}
+                            <small class="form-text text-muted">用户首次启动机器人时显示的消息</small>
+                            {% if bot_form.welcome_message.errors %}
+                                {% for error in bot_form.welcome_message.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ bot_form.help_message.label(class="form-label") }}
+                            {{ bot_form.help_message(class="form-control", rows=3) }}
+                            <small class="form-text text-muted">用户使用 /help 命令时显示的消息</small>
+                            {% if bot_form.help_message.errors %}
+                                {% for error in bot_form.help_message.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            {{ bot_form.enable_logging.raw_data or bot_form.enable_logging(class="form-check-input") }}
+                            {{ bot_form.enable_logging.label(class="form-check-label") }}
+                        </div>
+                        <small class="form-text text-muted">记录用户交互和机器人活动</small>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        {{ bot_form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-gear"></i> 管理面板设置
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_admin_settings') }}" novalidate>
+                    {{ admin_form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ admin_form.admin_port.label(class="form-label") }}
+                            {{ admin_form.admin_port(class="form-control") }}
+                            <small class="form-text text-muted">管理面板 Web 服务器端口</small>
+                            {% if admin_form.admin_port.errors %}
+                                {% for error in admin_form.admin_port.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ admin_form.admin_username.label(class="form-label") }}
+                            {{ admin_form.admin_username(class="form-control") }}
+                            <small class="form-text text-muted">管理员用户名</small>
+                            {% if admin_form.admin_username.errors %}
+                                {% for error in admin_form.admin_username.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-group">
+                            {{ admin_form.admin_password.label(class="form-label") }}
+                            {{ admin_form.admin_password(class="form-control") }}
+                            <small class="form-text text-muted">管理员密码（留空则不更改）</small>
+                            {% if admin_form.admin_password.errors %}
+                                {% for error in admin_form.admin_password.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            {{ admin_form.enable_https.raw_data or admin_form.enable_https(class="form-check-input") }}
+                            {{ admin_form.enable_https.label(class="form-check-label") }}
+                        </div>
+                        <small class="form-text text-muted">启用 HTTPS （需要 SSL 证书）</small>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        {{ admin_form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-wrench"></i> 维护操作
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <div class="d-grid">
+                            <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#backupModal">
+                                <i class="bi bi-download"></i> 备份数据库
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div class="d-grid">
+                            <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#restoreModal">
+                                <i class="bi bi-upload"></i> 恢复数据库
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <div class="d-grid">
+                            <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#resetModal">
+                                <i class="bi bi-x-circle"></i> 重置数据库
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div class="d-grid">
+                            <a href="{{ url_for('logs') }}" class="btn btn-info">
+                                <i class="bi bi-file-text"></i> 查看日志
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 备份确认模态框 -->
+<div class="modal fade" id="backupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">备份数据库</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>确定要创建数据库备份吗？此操作将创建当前数据库的完整备份。</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form method="POST" action="{{ url_for('backup_database') }}">
+                    <button type="submit" class="btn btn-warning">确认备份</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 恢复确认模态框 -->
+<div class="modal fade" id="restoreModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">恢复数据库</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form method="POST" action="{{ url_for('restore_database') }}" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="backup_file" class="form-label">选择备份文件</label>
+                        <input type="file" class="form-control" id="backup_file" name="backup_file" required>
+                    </div>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 警告：此操作将覆盖当前数据库中的所有数据。继续操作前，请确保您已备份重要数据。
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-danger">确认恢复</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 重置确认模态框 -->
+<div class="modal fade" id="resetModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">重置数据库</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> 危险操作！此操作将删除所有按钮、菜单和配置数据，并将数据库重置为初始状态。此操作不可撤销！
+                </div>
+                <p>为确认操作，请在下方输入框中输入 <strong>RESET</strong>：</p>
+                <form method="POST" action="{{ url_for('reset_database') }}" id="resetForm">
+                    <div class="mb-3">
+                        <input type="text" class="form-control" id="confirmReset" name="confirm_reset" required placeholder="输入 RESET 确认">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmResetBtn" disabled>确认重置</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 处理重置确认
+        var confirmResetInput = document.getElementById('confirmReset');
+        var confirmResetBtn = document.getElementById('confirmResetBtn');
+        var resetForm = document.getElementById('resetForm');
+        
+        if (confirmResetInput && confirmResetBtn) {
+            confirmResetInput.addEventListener('input', function() {
+                confirmResetBtn.disabled = this.value !== 'RESET';
+            });
+            
+            confirmResetBtn.addEventListener('click', function() {
+                if (confirmResetInput.value === 'RESET') {
+                    resetForm.submit();
+                }
+            });
+        }
+    });
+</script>
+{% endblock %} 

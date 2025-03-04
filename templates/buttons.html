@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}按钮管理 - Telegram Bot 管理面板{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h1>按钮管理</h1>
+    </div>
+    <div class="col-md-6 text-end">
+        <a href="{{ url_for('add_button') }}" class="btn btn-success">
+            <i class="bi bi-plus-circle"></i> 添加新按钮
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-primary text-white">
+        按钮列表
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>名称</th>
+                        <th>文本</th>
+                        <th>回调数据</th>
+                        <th>URL</th>
+                        <th>状态</th>
+                        <th>使用次数</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if buttons %}
+                        {% for button in buttons %}
+                        <tr>
+                            <td>{{ button.id }}</td>
+                            <td>{{ button.name }}</td>
+                            <td>{{ button.text }}</td>
+                            <td>{{ button.callback_data or '-' }}</td>
+                            <td>
+                                {% if button.url %}
+                                <a href="{{ button.url }}" target="_blank" class="text-truncate d-inline-block" style="max-width: 150px;" title="{{ button.url }}">
+                                    {{ button.url }}
+                                </a>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if button.is_active %}
+                                <span class="badge bg-success">启用</span>
+                                {% else %}
+                                <span class="badge bg-danger">禁用</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-info">{{ button.usage_count or 0 }}</span>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('edit_button', button_id=button.id) }}" class="btn btn-outline-primary">
+                                        <i class="bi bi-pencil"></i> 编辑
+                                    </a>
+                                    <button type="button" class="btn btn-outline-danger" 
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#deleteModal" 
+                                            data-id="{{ button.id }}"
+                                            data-name="{{ button.text }}">
+                                        <i class="bi bi-trash"></i> 删除
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center">暂无按钮数据</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    {% if buttons and buttons|length > 10 %}
+    <div class="card-footer">
+        <nav>
+            <ul class="pagination justify-content-center">
+                <li class="page-item {% if page == 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('buttons', page=page-1) if page > 1 else '#' }}">上一页</a>
+                </li>
+                
+                {% for i in range(1, total_pages + 1) %}
+                <li class="page-item {% if i == page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('buttons', page=i) }}">{{ i }}</a>
+                </li>
+                {% endfor %}
+                
+                <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('buttons', page=page+1) if page < total_pages else '#' }}">下一页</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 删除确认模态框 -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                确定要删除按钮 "<span id="buttonName"></span>" 吗？此操作不可撤销，并且会同时删除此按钮与菜单的所有关联。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form id="deleteForm" method="POST" action="">
+                    <button type="submit" class="btn btn-danger">确认删除</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 处理删除按钮模态框
+        var deleteModal = document.getElementById('deleteModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function(event) {
+                var button = event.relatedTarget;
+                var id = button.getAttribute('data-id');
+                var name = button.getAttribute('data-name');
+                
+                // 更新模态框内容
+                document.getElementById('buttonName').textContent = name;
+                
+                // 设置表单动作
+                document.getElementById('deleteForm').action = "{{ url_for('delete_button', button_id=0) }}".replace('0', id);
+            });
+        }
+    });
+</script>
+{% endblock %} 
