@@ -46,7 +46,7 @@ root_logger.addHandler(file_handler)
 logger = logging.getLogger(__name__)
 
 # 设置变量和常量
-TOKEN = "7988564533:AAFcVl6nUY-jRYhfpBORvRpC_An0WLSa4CY"  # 替换为您的实际token
+TOKEN = "7988564533:AAFcVl6nUY-jRYhfpBORvRpC_An0WLSa4CY"  # 使用您从BotFather获取的实际token
 API_URL = "your_api_url_here"  # 替换为您的API URL
 DB_PATH = "/opt/tg-bot/data/bot_data.db"  # 数据库文件路径
 LOCK_FILE = "/opt/tg-bot/bot.lock"
