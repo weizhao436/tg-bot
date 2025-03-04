@@ -1,50 +1,60 @@
-import logging
-import time
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Telegram Bot - 主程序
+"""
 import os
 import sys
 import json
-import urllib.request
-import urllib.error
-import urllib.parse
-import sqlite3
-from datetime import datetime, timedelta
-from telegram import ReplyKeyboardMarkup, KeyboardButton, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
-from telegram import InputMediaPhoto, InputMediaVideo
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, Defaults, ContextTypes
-from telegram.ext import CallbackQueryHandler, ConversationHandler, JobQueue
+import time
 import fcntl
+import logging
+import sqlite3
 import socket
-from flask import Flask
-import requests
 import threading
 import signal
+from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
-from telegram.error import TelegramError
 
-# 尝试导入config.py中的BOT_TOKEN
+# 尝试导入Telegram相关库
 try:
-    from config import BOT_TOKEN
+    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
+    from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters, Defaults
+    from telegram.error import TelegramError
 except ImportError:
-    BOT_TOKEN = None
-    print("警告: 无法导入config.py模块，将尝试其他方式获取token")
-except Exception as e:
-    BOT_TOKEN = None
-    print(f"警告: 导入config.py时出错: {e}")
+    print("错误: 未安装python-telegram-bot库。请运行: pip install python-telegram-bot")
+    sys.exit(1)
 
-# 创建日志目录
-os.makedirs('/opt/tg-bot/logs', exist_ok=True)
+# 尝试导入配置
+try:
+    from config import (BOT_TOKEN, BASE_DIR, DATA_DIR, LOG_DIR, 
+                        LOCK_FILE, DB_PATH, LOG_LEVEL, LOG_MAX_SIZE, 
+                        LOG_BACKUP_COUNT, ADMIN_PORT_START, ADMIN_PORT_END,
+                        API_URL, UPDATE_CHECK_INTERVAL)
+    print("✅ 已成功导入配置")
+except ImportError:
+    print("错误: 未找到config.py文件")
+    sys.exit(1)
+except Exception as e:
+    print(f"导入配置时出错: {e}")
+    sys.exit(1)
+
+# ======== 设置日志 ========
+# 确保日志目录存在
+os.makedirs(LOG_DIR, exist_ok=True)
 
 # 配置日志
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=getattr(logging, LOG_LEVEL)
 )
 
 # 添加文件处理器
+log_file = os.path.join(LOG_DIR, 'bot.log')
 file_handler = RotatingFileHandler(
-    '/opt/tg-bot/logs/bot.log',
-    maxBytes=10*1024*1024,  # 10MB
-    backupCount=5
+    log_file,
+    maxBytes=LOG_MAX_SIZE,
+    backupCount=LOG_BACKUP_COUNT
 )
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 
@@ -54,140 +64,77 @@ root_logger.addHandler(file_handler)
 
 # 创建日志记录器
 logger = logging.getLogger(__name__)
+logger.info(f"启动Telegram Bot - 日志文件: {log_file}")
 
-# 设置变量和常量
-TOKEN = BOT_TOKEN  # 从config.py导入的token
-API_URL = "your_api_url_here"  # 替换为您的API URL
-DB_PATH = "/opt/tg-bot/data/bot_data.db"  # 数据库文件路径
-LOCK_FILE = "/opt/tg-bot/bot.lock"
-BUTTON_UPDATE_FLAG = False  # 按钮更新标志
+# ======== 确保数据目录存在 ========
+os.makedirs(DATA_DIR, exist_ok=True)
+logger.info(f"数据目录: {DATA_DIR}")
 
-# 确保数据目录存在
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+# ======== 全局变量 ========
+# 按钮更新标志
+BUTTON_UPDATE_FLAG = False
 
-# 按钮更新标志文件路径
-BUTTON_UPDATE_FLAG = os.path.join(os.path.dirname(__file__), 'button_update.flag')
-# 上次检查按钮更新的时间
-last_button_check = 0
-# 按钮缓存
-button_cache = None
-
-# 检查按钮是否有更新
-def check_button_updates():
-    global last_button_check, button_cache
-    
-    # 强制清除缓存，始终重新加载按钮数据
-    button_cache = None
-    last_button_check = time.time()
-    logger.info("重新加载按钮配置")
-    return True
-
-# 从数据库加载按钮
-def load_buttons_from_db():
-    global button_cache
-    
-    # 如果缓存存在且没有检测到更新，直接返回缓存
-    if button_cache is not None and not check_button_updates():
-        return button_cache
-    
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        # 获取所有按钮并按行和列排序
-        cursor.execute("SELECT * FROM buttons ORDER BY row, column")
-        buttons_data = cursor.fetchall()
-        
-        # 将按钮组织成行和列
-        keyboard = []
-        current_row = -1
-        
-        for button in buttons_data:
-            row = button['row']
-            column = button['column']
-            text = button['text']
-            
-            # 如果是新的一行，添加一个新的行列表
-            if row > current_row:
-                keyboard.append([])
-                current_row = row
-            
-            # 添加按钮到当前行
-            if current_row < len(keyboard):
-                keyboard[current_row].append(KeyboardButton(text))
-        
-        conn.close()
-        
-        # 如果没有按钮，使用默认键盘
-        if not keyboard:
-            keyboard = [
-                [KeyboardButton("🔍 搜索"), KeyboardButton("📢 最新活动")],
-                [KeyboardButton("🏠 主页"), KeyboardButton("👤 个人中心")],
-                [KeyboardButton("📸 图片展示"), KeyboardButton("📞 联系我们")],
-                [KeyboardButton("❓ 帮助")]
-            ]
-        
-        # 更新缓存
-        button_cache = keyboard
-        return keyboard
-    
-    except Exception as e:
-        logger.error(f"从数据库加载按钮时出错: {e}")
-        # 出错时返回默认键盘
-        return [
-            [KeyboardButton("🔍 搜索"), KeyboardButton("📢 最新活动")],
-            [KeyboardButton("🏠 主页"), KeyboardButton("👤 个人中心")],
-            [KeyboardButton("📸 图片展示"), KeyboardButton("📞 联系我们")],
-            [KeyboardButton("❓ 帮助")]
-        ]
-
-# 创建常驻键盘
-def get_main_keyboard():
-    keyboard = load_buttons_from_db()
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-# 创建数据库和表
+# ======== 数据库函数 ========
 def setup_database():
-    logger.info(f"当前用户: {os.getuid()}({os.geteuid()})")
-    logger.info(f"数据库绝对路径: {os.path.abspath(DB_PATH)}")
+    """设置数据库"""
+    logger.info(f"设置数据库: {DB_PATH}")
     
-    # 添加目录创建逻辑
+    # 记录当前环境信息
+    logger.info(f"当前用户: {os.getuid()}:{os.getgid()}")
+    logger.info(f"数据库路径: {os.path.abspath(DB_PATH)}")
+    
+    # 确保数据目录存在并有正确权限
     db_dir = os.path.dirname(DB_PATH)
     if not os.path.exists(db_dir):
         try:
             os.makedirs(db_dir, exist_ok=True)
-            logger.info(f"成功创建数据库目录: {db_dir}")
+            os.chmod(db_dir, 0o755)  # 设置目录权限
+            logger.info(f"已创建数据库目录: {db_dir}")
         except Exception as e:
             logger.error(f"创建数据库目录失败: {e}")
-            raise
+            try:
+                # 尝试以更宽松的权限创建
+                os.system(f"mkdir -p {db_dir}")
+                os.system(f"chmod 777 {db_dir}")
+                logger.info("使用系统命令创建了数据库目录")
+            except Exception as e2:
+                logger.error(f"使用系统命令创建目录也失败: {e2}")
+                raise RuntimeError(f"无法创建数据库目录: {e2}")
     
-    # 在目录创建后添加
-    logger.info(f"目录权限: {oct(os.stat(db_dir).st_mode)}")
-    logger.info(f"用户是否有写权限: {os.access(db_dir, os.W_OK)}")
-    
-    # 添加更详细的错误处理
+    # 记录目录权限
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=30)  # 添加超时参数
-        cursor = conn.cursor()
-        logger.info(f"成功连接到数据库: {DB_PATH}")
+        dir_stat = os.stat(db_dir)
+        logger.info(f"目录权限: {oct(dir_stat.st_mode)}, 所有者: {dir_stat.st_uid}:{dir_stat.st_gid}")
+        logger.info(f"当前用户对目录的写权限: {os.access(db_dir, os.W_OK)}")
+    except Exception as e:
+        logger.error(f"获取目录信息失败: {e}")
+    
+    # 连接数据库并创建表
+    try:
+        # 如果数据库文件不存在，尝试创建空文件
+        if not os.path.exists(DB_PATH):
+            try:
+                with open(DB_PATH, 'w') as f:
+                    pass
+                os.chmod(DB_PATH, 0o644)  # 设置文件权限
+                logger.info(f"已创建空数据库文件: {DB_PATH}")
+            except Exception as e:
+                logger.error(f"创建数据库文件失败: {e}")
+                # 尝试使用系统命令
+                os.system(f"touch {DB_PATH}")
+                os.system(f"chmod 666 {DB_PATH}")
+                logger.info("使用系统命令创建了数据库文件")
         
-        # 在连接数据库前添加
-        logger.info(f"文件存在: {os.path.exists(DB_PATH)}")
+        # 记录文件权限
         if os.path.exists(DB_PATH):
-            logger.info(f"文件权限: {oct(os.stat(DB_PATH).st_mode)}")
+            file_stat = os.stat(DB_PATH)
+            logger.info(f"文件权限: {oct(file_stat.st_mode)}, 所有者: {file_stat.st_uid}:{file_stat.st_gid}")
+            logger.info(f"当前用户对文件的写权限: {os.access(DB_PATH, os.W_OK)}")
         
-        # 创建活动表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS activities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            description TEXT,
-            date TEXT,
-            image_url TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
+        # 尝试连接数据库
+        conn = sqlite3.connect(DB_PATH, timeout=30)  # 增加超时时间
+        cursor = conn.cursor()
+        logger.info("成功连接到数据库")
         
         # 创建用户表
         cursor.execute('''
@@ -197,727 +144,600 @@ def setup_database():
             first_name TEXT,
             last_name TEXT,
             language_code TEXT,
-            last_activity TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            last_activity TEXT,
+            join_date TEXT
         )
         ''')
         
-        # 创建响应表
+        # 创建功能使用统计表
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS responses (
+        CREATE TABLE IF NOT EXISTS usage_stats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            trigger_text TEXT NOT NULL,
-            response_text TEXT NOT NULL,
-            has_image INTEGER DEFAULT 0,
-            image_url TEXT,
-            version INTEGER DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            user_id INTEGER,
+            feature TEXT,
+            use_time TEXT,
+            FOREIGN KEY (user_id) REFERENCES users (id)
         )
         ''')
         
-        # 创建按钮表
+        # 创建定制按钮表
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS buttons (
+        CREATE TABLE IF NOT EXISTS custom_buttons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            row INTEGER NOT NULL,
-            column INTEGER NOT NULL,
-            text TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            button_text TEXT,
+            button_url TEXT,
+            created_at TEXT
         )
         ''')
-        
-        # 插入一些示例数据
-        # 活动
-        cursor.execute("SELECT COUNT(*) FROM activities")
-        if cursor.fetchone()[0] == 0:
-            activities = [
-                ("周末音乐节", "来体验西安最热门的音乐盛宴！", "2025-03-08 20:00", "https://example.com/music.jpg"),
-                ("美食品鉴会", "品尝西安特色美食，感受舌尖上的陕西。", "2025-03-09 14:00", "https://example.com/food.jpg"),
-                ("电影首映礼", "最新大片抢先看，与明星近距离接触。", "2025-03-15 19:00", "https://example.com/movie.jpg")
-            ]
-            cursor.executemany("INSERT INTO activities (title, description, date, image_url) VALUES (?, ?, ?, ?)", activities)
-        
-        # 初始化按钮数据
-        cursor.execute("SELECT COUNT(*) FROM buttons")
-        if cursor.fetchone()[0] == 0:
-            buttons = [
-                (0, 0, "🔍 搜索"), (0, 1, "📢 最新活动"),
-                (1, 0, "🏠 主页"), (1, 1, "👤 个人中心"),
-                (2, 0, "📸 图片展示"), (2, 1, "📞 联系我们"),
-                (3, 0, "❓ 帮助"), (3, 1, "")
-            ]
-            cursor.executemany("INSERT INTO buttons (row, column, text) VALUES (?, ?, ?)", buttons)
-            logger.info("初始化按钮数据完成")
-        
-        # 初始化响应数据
-        cursor.execute("SELECT COUNT(*) FROM responses")
-        if cursor.fetchone()[0] == 0:
-            responses = [
-                ("🔍 搜索", "请输入您想搜索的西安景点或活动:", 0, ""),
-                ("🏠 主页", "欢迎访问西安娱乐导航主页！\n\n这里汇集了西安最新、最热门的活动信息。", 0, ""),
-                ("❓ 帮助", "有任何问题，请直接在对话框中输入您的问题，或使用键盘按钮浏览不同功能。", 0, "")
-            ]
-            cursor.executemany("INSERT INTO responses (trigger_text, response_text, has_image, image_url) VALUES (?, ?, ?, ?)", responses)
-            logger.info("初始化响应数据完成")
         
         conn.commit()
         conn.close()
-        logger.info("数据库设置完成")
+        logger.info("数据库表创建/更新成功")
+        return True
+        
     except sqlite3.Error as e:
-        logger.error(f"数据库连接失败: {e}")
-        logger.error(f"当前工作目录: {os.getcwd()}")
-        logger.error(f"数据库路径: {os.path.abspath(DB_PATH)}")
-        logger.error(f"目录权限: {oct(os.stat(db_dir).st_mode)[-3:]}")
-        if os.path.exists(DB_PATH):
-            logger.error(f"文件权限: {oct(os.stat(DB_PATH).st_mode)[-3:]}")
-        else:
-            logger.error("数据库文件不存在")
-        raise
-
-# 定义命令处理程序
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """当发出 /start 命令时发送消息。"""
-    user = update.effective_user
-    logger.info(f"收到来自用户 {user.id} ({user.username}) 的 /start 命令")
-    
-    # 保存用户信息到数据库
-    save_user(user)
-    
-    # 确保获取最新的按钮配置
-    check_button_updates()
-    
-    try:
-        await update.message.reply_text(
-            f'你好 {user.first_name}！我是西安娱乐导航机器人🤖。\n'
-            f'使用下方键盘按钮或 /help 查看可用命令。',
-            reply_markup=get_main_keyboard()
-        )
-        logger.info("成功发送 /start 响应")
-    except Exception as e:
-        logger.error(f"发送 /start 响应时出错: {e}")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """当发出 /help 命令时发送消息。"""
-    user = update.effective_user
-    logger.info(f"收到来自用户 {user.id} ({user.username}) 的 /help 命令")
-    
-    # 确保获取最新的按钮配置
-    check_button_updates()
-    
-    try:
-        await update.message.reply_text(
-            '可用命令:\n'
-            '/start - 启动机器人\n'
-            '/help - 显示此帮助消息\n'
-            '/photo - 发送图片示例\n'
-            '/video - 发送视频示例\n'
-            '/admin - 管理员功能\n\n'
-            '您也可以使用下方的键盘按钮快速访问功能。',
-            reply_markup=get_main_keyboard()
-        )
-        logger.info("成功发送 /help 响应")
-    except Exception as e:
-        logger.error(f"发送 /help 响应时出错: {e}")
-
-async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理搜索按钮"""
-    response_data = get_response_for_trigger("🔍 搜索")
-    
-    if response_data:
-        response_text = response_data['response_text']
-    else:
-        response_text = "请输入您要搜索的内容："
-    
-    await update.message.reply_text(response_text)
-
-async def latest_activities(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理最新活动按钮"""
-    # 从数据库获取活动
-    activities = get_activities()
-    
-    if not activities:
-        await update.message.reply_text("目前没有活动信息。")
-        return
-    
-    # 创建活动列表消息
-    message = "🆕 最新活动：\n\n"
-    for i, activity in enumerate(activities, 1):
-        message += f"{i}. {activity['title']} - {activity['date']}\n"
-        message += f"   {activity['description']}\n\n"
-    
-    # 创建内联键盘，用于查看活动详情
-    keyboard = []
-    for activity in activities:
-        keyboard.append([InlineKeyboardButton(f"查看: {activity['title']}", callback_data=f"activity_{activity['id']}")])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(message, reply_markup=reply_markup)
-
-async def activity_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理活动详情按钮回调"""
-    query = update.callback_query
-    await query.answer()
-    
-    activity_id = query.data.split('_')[1]
-    activity = get_activity_by_id(activity_id)
-    
-    if not activity:
-        await query.edit_message_text("活动信息不存在或已被删除。")
-        return
-    
-    message = f"🎉 <b>{activity['title']}</b>\n\n"
-    message += f"📅 日期: {activity['date']}\n\n"
-    message += f"📝 描述: {activity['description']}\n\n"
-    
-    # 如果有图片，发送图片
-    if activity['image_url'] and activity['image_url'].startswith('http'):
+        logger.error(f"数据库错误: {e}")
+        # 尝试异常恢复
         try:
-            await context.bot.send_photo(
-                chat_id=query.message.chat_id,
-                photo=activity['image_url'],
-                caption=message,
-                parse_mode='HTML'
-            )
-            await query.delete_message()
-        except Exception as e:
-            logger.error(f"发送活动图片时出错: {e}")
-            # 如果发送图片失败，只发送文本
-            await query.edit_message_text(message, parse_mode='HTML')
-    else:
-        await query.edit_message_text(message, parse_mode='HTML')
-
-async def homepage(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理主页按钮"""
-    response_data = get_response_for_trigger("🏠 主页")
-    
-    if response_data:
-        response_text = response_data['response_text']
-    else:
-        response_text = ("🏠 欢迎访问西安娱乐导航主页\n\n"
-                        "我们提供西安地区最全面的娱乐信息和服务。\n"
-                        "请使用键盘按钮浏览不同功能。")
-    
-    await update.message.reply_text(response_text, reply_markup=get_main_keyboard())
-
-async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理个人中心按钮"""
-    user = update.effective_user
-    
-    # 获取用户信息
-    user_info = get_user_by_id(user.id)
-    
-    if user_info:
-        created_at = datetime.strptime(user_info['created_at'], '%Y-%m-%d %H:%M:%S')
-        days_since_joined = (datetime.now() - created_at).days
-        
-        await update.message.reply_text(
-            f"👤 <b>{user.first_name}</b> 的个人中心\n\n"
-            f"用户ID: {user.id}\n"
-            f"用户名: @{user.username}\n"
-            f"加入时间: {user_info['created_at']}\n"
-            f"使用天数: {days_since_joined} 天\n\n"
-            "您目前没有待处理的订单。",
-            parse_mode='HTML'
-        )
-    else:
-        await update.message.reply_text(
-            f"👤 {user.first_name} 的个人中心\n\n"
-            f"用户ID: {user.id}\n"
-            f"用户名: @{user.username}\n\n"
-            "您目前没有待处理的订单。"
-        )
-
-async def contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理联系我们按钮"""
-    await update.message.reply_text(
-        "📞 联系我们\n\n"
-        "客服电话: 029-XXXXXXXX\n"
-        "电子邮件: support@example.com\n"
-        "工作时间: 周一至周日 9:00-21:00"
-    )
-
-async def photo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """发送图片示例"""
-    # 发送单张图片
-    await update.message.reply_photo(
-        photo="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Xi%27an_-_Big_Wild_Goose_Pagoda.jpg/1200px-Xi%27an_-_Big_Wild_Goose_Pagoda.jpg",
-        caption="大雁塔 - 西安著名景点"
-    )
-    
-    # 发送多张图片
-    media_group = [
-        InputMediaPhoto("https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Xi%27an_City_Wall.jpg/1200px-Xi%27an_City_Wall.jpg", caption="西安城墙"),
-        InputMediaPhoto("https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Bell_Tower_of_Xi%27an.jpg/1200px-Bell_Tower_of_Xi%27an.jpg"),
-        InputMediaPhoto("https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Terracotta_Army%2C_View_of_Pit_1.jpg/1200px-Terracotta_Army%2C_View_of_Pit_1.jpg")
-    ]
-    
-    await update.message.reply_media_group(media=media_group)
-
-async def video_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """发送视频示例"""
-    # 发送视频
-    await update.message.reply_video(
-        video="https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
-        caption="视频示例 - 大雁塔灯光秀",
-        supports_streaming=True
-    )
-
-async def photo_gallery(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """显示图片画廊"""
-    # 创建内联键盘，用于浏览不同类别的图片
-    keyboard = [
-        [InlineKeyboardButton("景点", callback_data="gallery_attractions")],
-        [InlineKeyboardButton("美食", callback_data="gallery_food")],
-        [InlineKeyboardButton("活动", callback_data="gallery_events")]
-    ]
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        "📸 图片展示\n\n"
-        "请选择您想浏览的图片类别：",
-        reply_markup=reply_markup
-    )
-
-async def gallery_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理图片画廊回调"""
-    query = update.callback_query
-    await query.answer()
-    
-    category = query.data.split('_')[1]
-    
-    if category == "attractions":
-        # 发送景点图片
-        media_group = [
-            InputMediaPhoto("https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Xi%27an_-_Big_Wild_Goose_Pagoda.jpg/1200px-Xi%27an_-_Big_Wild_Goose_Pagoda.jpg", caption="大雁塔"),
-            InputMediaPhoto("https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Xi%27an_City_Wall.jpg/1200px-Xi%27an_City_Wall.jpg", caption="西安城墙"),
-            InputMediaPhoto("https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Bell_Tower_of_Xi%27an.jpg/1200px-Bell_Tower_of_Xi%27an.jpg", caption="钟楼")
-        ]
-        await query.delete_message()
-        await context.bot.send_media_group(chat_id=query.message.chat_id, media=media_group)
-    
-    elif category == "food":
-        # 发送美食图片
-        media_group = [
-            InputMediaPhoto("https://upload.wikimedia.org/wikipedia/commons/a/a5/Roujiamo.jpg", caption="肉夹馍"),
-            InputMediaPhoto("https://upload.wikimedia.org/wikipedia/commons/2/28/Liangpi.jpg", caption="凉皮"),
-            InputMediaPhoto("https://upload.wikimedia.org/wikipedia/commons/d/d8/Biangbiang_noodles.jpg", caption="Biangbiang面")
-        ]
-        await query.delete_message()
-        await context.bot.send_media_group(chat_id=query.message.chat_id, media=media_group)
-    
-    elif category == "events":
-        # 发送活动图片
-        media_group = [
-            InputMediaPhoto("https://example.com/event1.jpg", caption="音乐节"),
-            InputMediaPhoto("https://example.com/event2.jpg", caption="美食节"),
-            InputMediaPhoto("https://example.com/event3.jpg", caption="文化展览")
-        ]
-        try:
-            await query.delete_message()
-            await context.bot.send_media_group(chat_id=query.message.chat_id, media=media_group)
-        except Exception as e:
-            logger.error(f"发送活动图片时出错: {e}")
-            await query.edit_message_text("抱歉，无法加载活动图片。请稍后再试。")
-
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """管理员功能"""
-    user = update.effective_user
-    
-    # 检查是否是管理员（这里简单示例，实际应用中应该有更安全的验证）
-    admin_ids = [123456789]  # 替换为实际管理员的用户ID
-    
-    if user.id not in admin_ids:
-        await update.message.reply_text("抱歉，您没有管理员权限。")
-        return
-    
-    # 创建管理员菜单
-    keyboard = [
-        [InlineKeyboardButton("添加活动", callback_data="admin_add_activity")],
-        [InlineKeyboardButton("查看用户统计", callback_data="admin_user_stats")]
-    ]
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        "👨‍💼 管理员面板\n\n"
-        "请选择您要执行的操作：",
-        reply_markup=reply_markup
-    )
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理文本消息"""
-    text = update.message.text
-    user = update.effective_user
-    
-    # 更新用户最后活动时间
-    update_user_activity(user.id)
-    
-    logger.info(f"收到来自用户 {user.id} ({user.username}) 的消息: {text}")
-    
-    # 检查按钮是否有更新 - 由于没有使用 JobQueue，在每次消息处理时检查
-    button_updated = check_button_updates()
-    
-    # 从数据库获取回复
-    response_data = get_response_for_trigger(text)
-    
-    if response_data:
-        # 如果数据库中有匹配的回复
-        response_text = response_data['response_text']
-        has_image = response_data['has_image']
-        image_url = response_data['image_url']
-        
-        if has_image and image_url:
-            try:
-                await update.message.reply_photo(
-                    photo=image_url,
-                    caption=response_text
-                )
-                
-                # 如果按钮有更新，发送提示消息
-                if button_updated:
-                    await update.message.reply_text(
-                        "界面按钮已更新，请使用最新的键盘按钮。",
-                        reply_markup=get_main_keyboard()
-                    )
-                return
-            except Exception as e:
-                logger.error(f"发送图片回复时出错: {e}")
-                # 如果图片发送失败，回退到纯文本回复
-        
-        await update.message.reply_text(response_text, reply_markup=get_main_keyboard())
-        
-        # 如果按钮有更新，发送提示消息
-        if button_updated:
-            await update.message.reply_text(
-                "界面按钮已更新，请使用最新的键盘按钮。",
-                reply_markup=get_main_keyboard()
-            )
-        return
-    
-    # 如果没有匹配的回复，根据按钮文本执行相应的函数
-    if text == "🔍 搜索":
-        await search(update, context)
-    elif text == "📢 最新活动":
-        await latest_activities(update, context)
-    elif text == "🏠 主页":
-        await homepage(update, context)
-    elif text == "👤 个人中心":
-        await profile(update, context)
-    elif text == "📞 联系我们":
-        await contact(update, context)
-    elif text == "❓ 帮助":
-        await help_command(update, context)
-    elif text == "📸 图片展示":
-        await photo_gallery(update, context)
-    else:
-        await update.message.reply_text(f"您发送了: {text}\n\n请使用键盘按钮选择功能。", reply_markup=get_main_keyboard())
-    
-    # 如果按钮有更新，发送提示消息
-    if button_updated and text not in ["🔍 搜索", "📢 最新活动", "🏠 主页", "👤 个人中心", "📞 联系我们", "❓ 帮助", "📸 图片展示"]:
-        await update.message.reply_text(
-            "界面按钮已更新，请使用最新的键盘按钮。",
-            reply_markup=get_main_keyboard()
-        )
-
-# 添加一个处理所有更新的函数，用于调试
-async def debug_updates(update, context):
-    """记录所有收到的更新，用于调试"""
-    logger.debug(f"收到更新: {update.to_dict()}")
-    # 不阻止其他处理程序处理此更新
-    return False
-
-# 错误处理函数
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """处理错误"""
-    logger.error(f"更新 {update} 导致错误 {context.error}")
-    
-    # 获取完整的错误跟踪
-    import traceback
-    tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
-    tb_string = ''.join(tb_list)
-    
-    # 记录详细错误信息
-    logger.error(f"异常详情:\n{tb_string}")
-    
-    # 如果可能，向用户发送错误消息
-    if update and hasattr(update, 'effective_message') and update.effective_message:
-        await update.effective_message.reply_text(
-            "抱歉，处理您的请求时出现了错误。请稍后再试。"
-        )
-
-# 使用 urllib 发送 HTTP 请求
-def make_request(url):
-    try:
-        with urllib.request.urlopen(url) as response:
-            return response.read().decode('utf-8'), response.getcode()
-    except urllib.error.HTTPError as e:
-        return e.read().decode('utf-8'), e.code
+            backup_path = f"{DB_PATH}.bak.{int(time.time())}"
+            if os.path.exists(DB_PATH):
+                logger.info(f"备份当前数据库到 {backup_path}")
+                os.rename(DB_PATH, backup_path)
+            logger.info("创建新的数据库文件")
+            with open(DB_PATH, 'w') as f:
+                pass
+            os.chmod(DB_PATH, 0o644)
+            logger.info("已创建新的数据库文件，请重新启动机器人")
+        except Exception as recovery_e:
+            logger.error(f"恢复过程中出错: {recovery_e}")
+        return False
     except Exception as e:
-        logger.error(f"请求错误: {e}")
-        return str(e), 0
+        logger.error(f"设置数据库时出现未知错误: {e}")
+        return False
 
-# 数据库操作函数
 def save_user(user):
     """保存用户信息到数据库"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
         cursor = conn.cursor()
         
         # 检查用户是否已存在
         cursor.execute("SELECT id FROM users WHERE id = ?", (user.id,))
-        if cursor.fetchone() is None:
-            # 插入新用户
-            cursor.execute(
-                "INSERT INTO users (id, username, first_name, last_name, language_code, last_activity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (user.id, user.username, user.first_name, user.last_name, user.language_code, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            )
+        if cursor.fetchone():
+            # 用户已存在，更新信息
+            cursor.execute("""
+            UPDATE users SET
+                username = ?,
+                first_name = ?,
+                last_name = ?,
+                language_code = ?,
+                last_activity = ?
+            WHERE id = ?
+            """, (
+                user.username,
+                user.first_name,
+                user.last_name,
+                user.language_code,
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                user.id
+            ))
         else:
-            # 更新用户活动时间
-            cursor.execute(
-                "UPDATE users SET last_activity = ? WHERE id = ?",
-                (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), user.id)
-            )
+            # 用户不存在，创建新记录
+            cursor.execute("""
+            INSERT INTO users (id, username, first_name, last_name, language_code, last_activity, join_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                user.id,
+                user.username,
+                user.first_name,
+                user.last_name,
+                user.language_code,
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            ))
         
         conn.commit()
         conn.close()
+        logger.info(f"已保存/更新用户 {user.id} ({user.username}) 的信息")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"保存用户时出现数据库错误: {e}")
+        return False
     except Exception as e:
-        logger.error(f"保存用户信息时出错: {e}")
+        logger.error(f"保存用户时出现未知错误: {e}")
+        return False
 
 def get_user_by_id(user_id):
     """根据ID获取用户信息"""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = sqlite3.connect(DB_PATH, timeout=30)
         cursor = conn.cursor()
         
         cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-        user = cursor.fetchone()
+        user_data = cursor.fetchone()
         
         conn.close()
         
-        if user:
-            return dict(user)
+        if user_data:
+            # 创建用户字典
+            user = {
+                'id': user_data[0],
+                'username': user_data[1],
+                'first_name': user_data[2],
+                'last_name': user_data[3],
+                'language_code': user_data[4],
+                'last_activity': user_data[5],
+                'join_date': user_data[6]
+            }
+            return user
+        else:
+            return None
+    except sqlite3.Error as e:
+        logger.error(f"获取用户时出现数据库错误: {e}")
         return None
     except Exception as e:
-        logger.error(f"获取用户信息时出错: {e}")
-        return None
-
-def get_activities():
-    """获取所有活动"""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM activities ORDER BY date DESC")
-        activities = cursor.fetchall()
-        
-        conn.close()
-        
-        return [dict(activity) for activity in activities]
-    except Exception as e:
-        logger.error(f"获取活动列表时出错: {e}")
-        return []
-
-def get_activity_by_id(activity_id):
-    """根据ID获取活动详情"""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM activities WHERE id = ?", (activity_id,))
-        activity = cursor.fetchone()
-        
-        conn.close()
-        
-        if activity:
-            return dict(activity)
-        return None
-    except Exception as e:
-        logger.error(f"获取活动详情时出错: {e}")
+        logger.error(f"获取用户时出现未知错误: {e}")
         return None
 
 def update_user_activity(user_id):
-    """更新用户最后活动时间"""
+    """更新用户活动时间"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
         cursor = conn.cursor()
         
-        cursor.execute(
-            "UPDATE users SET last_activity = datetime('now') WHERE id = ?",
-            (user_id,)
-        )
+        cursor.execute("""
+        UPDATE users SET last_activity = ? WHERE id = ?
+        """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), user_id))
         
         conn.commit()
         conn.close()
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"更新用户活动时出现数据库错误: {e}")
+        return False
     except Exception as e:
-        logger.error(f"更新用户活动时间时出错: {e}")
+        logger.error(f"更新用户活动时出现未知错误: {e}")
+        return False
 
-# 定期检查按钮更新
-async def check_updates(context: ContextTypes.DEFAULT_TYPE = None):
-    """定期检查按钮更新，如有更新则通知活跃用户"""
-    if check_button_updates():
-        logger.info("检测到按钮更新，将重新加载按钮配置")
-        # 这里可以添加通知活跃用户的逻辑，例如发送消息告知用户界面已更新
-        # 或者在用户下次交互时自动更新界面
-
-# 从数据库获取按钮触发的响应
-def get_response_for_trigger(trigger_text):
-    """根据触发文本从数据库获取对应的响应"""
+# ======== 工具函数 ========
+def check_button_updates():
+    """检查按钮更新"""
+    global BUTTON_UPDATE_FLAG
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM responses WHERE trigger_text = ?", (trigger_text,))
-        response = cursor.fetchone()
-        
-        conn.close()
-        
-        if response:
-            return dict(response)
-        return None
+        # 检查按钮是否需要更新的逻辑
+        # 这里是示例代码，请根据实际需求修改
+        logger.info("检查按钮更新")
+        BUTTON_UPDATE_FLAG = True
+        return True
     except Exception as e:
-        logger.error(f"获取响应数据时出错: {e}")
-        return None
+        logger.error(f"检查按钮更新时出错: {str(e)}")
+        return False
 
-async def refresh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """刷新机器人配置"""
-    user = update.effective_user
-    
-    # 清除按钮缓存
-    global button_cache
-    button_cache = None
-    
-    await update.message.reply_text(
-        "配置已刷新，按钮和响应数据已重新加载。",
-        reply_markup=get_main_keyboard()
-    )
+def get_main_keyboard():
+    """获取主键盘"""
+    try:
+        keyboard = [
+            ["🔍 搜索", "🆕 最新活动"],
+            ["🏠 首页", "👤 个人中心"],
+            ["📞 联系我们", "📸 照片"],
+            ["🎥 视频", "🎞 图库"]
+        ]
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    except Exception as e:
+        logger.error(f"获取主键盘时出错: {str(e)}")
+        # 返回一个基本键盘作为后备
+        return ReplyKeyboardMarkup([["🏠 首页"]], resize_keyboard=True)
 
 def find_available_port(start_port, end_port):
+    """查找可用端口"""
     for port in range(start_port, end_port+1):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(('localhost', port)) != 0:
+                logger.info(f"找到可用端口: {port}")
                 return port
-    raise Exception("No available ports")
+    logger.error(f"在范围 {start_port}-{end_port} 内没有可用端口")
+    return start_port  # 如果没有找到，返回起始端口
 
-def main():
-    # 创建锁文件
-    lock_file = open("/tmp/telegram_bot.lock", "w")
+def make_request(url):
+    """发送HTTP请求并返回响应文本和状态码"""
     try:
-        # 尝试获取独占锁
-        fcntl.lockf(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        logger.info("成功获取锁，确保只有一个实例在运行")
-    except IOError:
-        logger.error("另一个实例已在运行。退出。")
-        sys.exit(1)
+        import requests
+        response = requests.get(url, timeout=30)
+        return response.text, response.status_code
+    except Exception as e:
+        logger.error(f"发送请求时出错: {e}")
+        return str(e), 500
+
+# ======== 示例功能 ========
+def get_activities():
+    """获取活动列表"""
+    # 示例活动数据，实际应用中应从数据库或API获取
+    activities = [
+        {
+            'id': '1',
+            'title': '社区清洁日',
+            'date': '2023-06-15',
+            'location': '中央公园',
+            'description': '一起来参与社区清洁活动，让我们的环境更美好！我们将提供清洁工具和饮料。'
+        },
+        {
+            'id': '2',
+            'title': '编程工作坊',
+            'date': '2023-06-20',
+            'location': '科技中心',
+            'description': '学习基础Python编程，适合初学者。请自带笔记本电脑。'
+        },
+        {
+            'id': '3',
+            'title': '艺术展览',
+            'date': '2023-06-25',
+            'location': '市立美术馆',
+            'description': '当地艺术家作品展示，包括绘画、雕塑和摄影作品。'
+        }
+    ]
+    return activities
+
+def get_activity_by_id(activity_id):
+    """根据ID获取活动详情"""
+    activities = get_activities()
+    for activity in activities:
+        if activity['id'] == activity_id:
+            return activity
+    return None
+
+def get_response_for_trigger(trigger_text):
+    """根据触发文本获取响应"""
+    try:
+        # 触发词和响应的映射
+        triggers = {
+            "你好": "👋 你好！有什么我可以帮助你的吗？",
+            "早上好": "🌞 早上好！祝你有一个美好的一天！",
+            "下午好": "🌤 下午好！今天过得如何？",
+            "晚上好": "🌙 晚上好！今天过得愉快吗？",
+            "谢谢": "🙏 不客气！随时为你服务。",
+            "再见": "👋 再见！期待下次再与你聊天。"
+        }
+        
+        # 查找匹配的触发词
+        for trigger, response in triggers.items():
+            if trigger in trigger_text:
+                logger.info(f"找到触发词 '{trigger}'，返回相应响应")
+                return response
+        
+        # 如果没有匹配的触发词
+        return None
+    except Exception as e:
+        logger.error(f"获取触发响应时出错: {e}")
+        return None
+
+# ======== 命令处理程序 ========
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理/start命令"""
+    try:
+        user = update.effective_user
+        logger.info(f"用户 {user.id} ({user.username}) 发送了 /start 命令")
+        
+        # 保存用户信息
+        save_user(user)
+        
+        # 准备欢迎消息
+        welcome_message = f"👋 你好，{user.first_name}！\n\n"
+        welcome_message += "欢迎使用我们的机器人。这是一个功能强大的机器人，可以帮助你:\n"
+        welcome_message += "• 🔍 搜索信息\n"
+        welcome_message += "• 📰 查看最新活动\n"
+        welcome_message += "• 📸 分享照片和视频\n"
+        welcome_message += "• 🎮 玩有趣的小游戏\n\n"
+        welcome_message += "使用底部的按钮菜单开始探索，或者输入 /help 查看更多命令。"
+        
+        # 发送欢迎消息并显示主键盘
+        await update.message.reply_html(
+            welcome_message,
+            reply_markup=get_main_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"处理 /start 命令时出错: {e}")
+        await update.message.reply_text("抱歉，启动过程中出现了一个错误。请稍后再试。")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理/help命令"""
+    try:
+        user = update.effective_user
+        logger.info(f"用户 {user.id} ({user.username}) 发送了 /help 命令")
+        
+        # 记录用户活动
+        update_user_activity(user.id)
+        
+        help_text = "📚 <b>可用命令列表</b>\n\n"
+        help_text += "/start - 启动机器人并显示欢迎信息\n"
+        help_text += "/help - 显示此帮助信息\n"
+        help_text += "/search - 搜索功能\n"
+        help_text += "/latest - 查看最新活动\n"
+        help_text += "/refresh - 刷新机器人状态\n\n"
+        help_text += "你还可以使用底部的键盘菜单访问更多功能。"
+        
+        await update.message.reply_html(help_text)
+    except Exception as e:
+        logger.error(f"处理 /help 命令时出错: {e}")
+        await update.message.reply_text("抱歉，获取帮助信息时出现了一个错误。请稍后再试。")
+
+async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理搜索功能"""
+    try:
+        user = update.effective_user
+        logger.info(f"用户 {user.id} ({user.username}) 使用了搜索功能")
+        
+        # 记录用户活动
+        update_user_activity(user.id)
+        
+        await update.message.reply_text(
+            "🔍 请输入你想搜索的内容:",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        
+        # 在用户上下文中设置状态
+        context.user_data['state'] = 'waiting_for_search_query'
+    except Exception as e:
+        logger.error(f"处理搜索时出错: {e}")
+        await update.message.reply_text("抱歉，搜索功能暂时不可用。请稍后再试。")
+
+async def latest_activities(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """显示最新活动"""
+    try:
+        user = update.effective_user
+        logger.info(f"用户 {user.id} ({user.username}) 请求了最新活动")
+        
+        # 记录用户活动
+        update_user_activity(user.id)
+        
+        # 获取活动数据
+        activities = get_activities()
+        
+        if not activities:
+            await update.message.reply_text("目前没有可用的活动信息。请稍后再试。", reply_markup=get_main_keyboard())
+            return
+        
+        # 创建活动列表消息
+        message = "🆕 <b>最新活动</b>\n\n"
+        
+        keyboard = []
+        
+        for activity in activities[:5]:  # 只显示前5个活动
+            message += f"<b>{activity['title']}</b>\n"
+            message += f"日期: {activity['date']}\n"
+            message += f"简介: {activity['description'][:100]}...\n\n"
+            
+            # 为每个活动添加一个查看详情按钮
+            keyboard.append([
+                InlineKeyboardButton(f"查看详情: {activity['title'][:20]}", callback_data=f"activity_{activity['id']}")
+            ])
+        
+        # 添加一个查看全部按钮
+        keyboard.append([InlineKeyboardButton("查看全部活动", callback_data="view_all_activities")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_html(message, reply_markup=reply_markup)
+    except Exception as e:
+        logger.error(f"显示最新活动时出错: {e}")
+        await update.message.reply_text("抱歉，获取最新活动时出现了一个错误。请稍后再试。", reply_markup=get_main_keyboard())
+
+async def activity_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """显示活动详情"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        # 从回调数据中获取活动ID
+        activity_id = query.data.split('_')[1]
+        
+        user = query.from_user
+        logger.info(f"用户 {user.id} ({user.username}) 查看了活动 {activity_id} 的详情")
+        
+        # 记录用户活动
+        update_user_activity(user.id)
+        
+        # 获取活动详情
+        activity = get_activity_by_id(activity_id)
+        
+        if not activity:
+            await query.edit_message_text("抱歉，找不到该活动的详情。它可能已被删除。")
+            return
+        
+        # 创建详情消息
+        message = f"🎯 <b>{activity['title']}</b>\n\n"
+        message += f"📅 日期: {activity['date']}\n"
+        message += f"📍 地点: {activity['location']}\n\n"
+        message += f"📝 详情:\n{activity['description']}\n\n"
+        
+        # 返回按钮
+        keyboard = [[InlineKeyboardButton("返回活动列表", callback_data="view_all_activities")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='HTML')
+    except Exception as e:
+        logger.error(f"显示活动详情时出错: {e}")
+        try:
+            await query.edit_message_text("抱歉，获取活动详情时出现了一个错误。请稍后再试。")
+        except:
+            pass
+
+async def refresh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """刷新机器人状态"""
+    try:
+        user = update.effective_user
+        logger.info(f"用户 {user.id} ({user.username}) 发送了 /refresh 命令")
+        
+        # 可以在这里添加任何需要刷新的状态或数据
+        global BUTTON_UPDATE_FLAG
+        BUTTON_UPDATE_FLAG = True
+        
+        await update.message.reply_text("✅ 机器人状态已刷新！", reply_markup=get_main_keyboard())
+    except Exception as e:
+        logger.error(f"刷新机器人状态时出错: {e}")
+        await update.message.reply_text("抱歉，刷新操作失败。请稍后再试。")
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """处理错误"""
+    logger.error(f"更新 {update} 导致错误 {context.error}")
+    try:
+        if update and hasattr(update, 'effective_message'):
+            await update.effective_message.reply_text("抱歉，发生了一个错误。我们的技术团队已收到通知。")
+    except:
+        pass
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理普通消息"""
+    try:
+        user = update.effective_user
+        message_text = update.message.text
+        logger.info(f"用户 {user.id} ({user.username}) 发送了消息: {message_text}")
+        
+        # 记录用户活动
+        update_user_activity(user.id)
+        
+        # 检查用户状态
+        if 'state' in context.user_data:
+            state = context.user_data['state']
+            
+            # 处理搜索查询
+            if state == 'waiting_for_search_query':
+                logger.info(f"处理搜索查询: {message_text}")
+                await update.message.reply_text(
+                    f"🔍 正在搜索: {message_text}\n\n"
+                    "搜索结果将很快显示...",
+                    reply_markup=get_main_keyboard()
+                )
+                # 清除状态
+                del context.user_data['state']
+                return
+        
+        # 检查是否有匹配的触发响应
+        response = get_response_for_trigger(message_text)
+        if response:
+            await update.message.reply_text(response, reply_markup=get_main_keyboard())
+            return
+        
+        # 如果是主键盘按钮
+        if message_text == "🔍 搜索":
+            await search(update, context)
+        elif message_text == "🆕 最新活动":
+            await latest_activities(update, context)
+        else:
+            # 默认响应
+            await update.message.reply_text(
+                "👋 我收到了你的消息。你可以使用键盘菜单选择功能，或者输入 /help 查看可用命令。",
+                reply_markup=get_main_keyboard()
+            )
+    except Exception as e:
+        logger.error(f"处理消息时出错: {e}")
+        try:
+            await update.message.reply_text("抱歉，处理你的消息时出现了一个错误。请稍后再试。")
+        except:
+            pass
+
+# ======== 主函数 ========
+def main():
+    """主函数"""
+    # 创建锁文件并检查是否已经有实例在运行
+    try:
+        # 确保锁文件目录存在
+        lock_dir = os.path.dirname(LOCK_FILE)
+        os.makedirs(lock_dir, exist_ok=True)
+        
+        # 尝试创建和锁定文件
+        lock_file = open(LOCK_FILE, "w")
+        try:
+            # 尝试获取独占锁
+            fcntl.lockf(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            logger.info("成功获取锁，确保只有一个实例在运行")
+        except IOError:
+            logger.error("另一个实例已在运行。退出。")
+            sys.exit(1)
+    except Exception as e:
+        logger.error(f"创建锁文件时出错: {e}")
+        # 继续执行，即使锁定失败
     
-    """启动机器人。"""
-    # 获取bot token (按优先级顺序尝试不同来源)
+    logger.info("初始化机器人...")
+    
+    # 获取bot token
     token = None
     
-    # 1. 尝试从环境变量获取
-    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    # 1. 尝试使用配置中的BOT_TOKEN
+    token = BOT_TOKEN
     if token:
-        logger.info("已从环境变量TELEGRAM_BOT_TOKEN获取token")
+        logger.info("使用配置文件中的BOT_TOKEN")
     
-    # 2. 尝试从config.json获取
+    # 2. 尝试从环境变量获取
+    if not token:
+        token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        if token:
+            logger.info("使用环境变量TELEGRAM_BOT_TOKEN")
+    
+    # 3. 尝试从config.json获取
     if not token:
         try:
             config_path = os.path.join(os.path.dirname(__file__), 'config.json')
             if os.path.exists(config_path):
                 with open(config_path, 'r') as f:
                     config = json.load(f)
-                    token = config.get('token')
+                    token = config.get('token') or config.get('telegram_bot_token')
                     if token:
-                        logger.info("已从config.json获取token")
+                        logger.info("使用config.json中的token")
         except Exception as e:
             logger.warning(f"从config.json读取token时出错: {e}")
     
-    # 3. 尝试从config.py获取
+    # 检查是否有有效的token
     if not token:
-        try:
-            import config
-            token = getattr(config, 'BOT_TOKEN', None)
-            if token:
-                logger.info("已从config.py获取token")
-        except ImportError:
-            logger.warning("未找到config.py模块")
-        except Exception as e:
-            logger.warning(f"从config.py读取token时出错: {e}")
+        logger.error("未找到有效的Telegram Bot Token")
+        logger.error("请在config.py中设置BOT_TOKEN，或设置环境变量TELEGRAM_BOT_TOKEN，或在config.json中配置")
+        sys.exit(1)
     
-    # 4. 使用代码中定义的TOKEN变量
-    if not token:
-        try:
-            # 使用全局变量TOKEN（如果已经导入）
-            token = TOKEN
-            if token and token != "your_bot_token_here":
-                logger.info("使用代码中定义的TOKEN变量")
-        except NameError:
-            logger.warning("未找到代码中定义的TOKEN变量")
-    
-    # 5. 再次检查config.py中的BOT_TOKEN变量（直接读取文件）
-    if not token:
-        try:
-            from importlib import import_module
-            config_module = import_module('config')
-            if hasattr(config_module, 'BOT_TOKEN'):
-                token = config_module.BOT_TOKEN
-                if token:
-                    logger.info("已从config模块导入BOT_TOKEN")
-        except Exception as e:
-            logger.warning(f"导入config模块时出错: {e}")
-    
-    if not token:
-        logger.error("未找到Telegram Bot Token，请设置环境变量TELEGRAM_BOT_TOKEN或在config.json中配置")
-        return
-    
-    logger.info("正在初始化机器人...")
-    
+    # 设置数据库
     try:
-        # 设置数据库
-        setup_database()
-        
-        # 检查机器人 token 是否有效
+        db_setup_result = setup_database()
+        if db_setup_result:
+            logger.info("数据库设置成功")
+        else:
+            logger.warning("数据库设置不完整，某些功能可能不可用")
+    except Exception as e:
+        logger.error(f"数据库设置失败: {e}")
+        logger.warning("继续运行，但某些功能可能不可用")
+    
+    # 检查机器人 token 是否有效
+    try:
         response_text, status_code = make_request(f"https://api.telegram.org/bot{token}/getMe")
         if status_code != 200:
             logger.error(f"机器人 token 无效: {response_text}")
-            return
+            sys.exit(1)
         
         bot_info = json.loads(response_text)["result"]
         logger.info(f"机器人信息: {bot_info['first_name']} (@{bot_info['username']})")
-        
-        # 删除任何现有的 webhook
+    except Exception as e:
+        logger.error(f"检查机器人 token 时出错: {e}")
+        sys.exit(1)
+    
+    # 删除任何现有的 webhook
+    try:
         response_text, _ = make_request(f"https://api.telegram.org/bot{token}/deleteWebhook")
         logger.info(f"删除 webhook 结果: {response_text}")
-        
+    except Exception as e:
+        logger.error(f"删除 webhook 时出错: {e}")
+    
+    try:
         # 创建 Application
-        defaults = Defaults(parse_mode='HTML')  # 使用 HTML 解析模式
+        defaults = Defaults(parse_mode='HTML')
         application = Application.builder().token(token).defaults(defaults).build()
         logger.info("成功创建 Application 实例")
-
-        # 使用 JobQueue 定期检查按钮更新
-        job_queue = application.job_queue
-        job_queue.run_repeating(check_updates, interval=10, first=5)  # 每10秒检查一次
-        logger.info("已设置定期检查按钮更新的任务")
         
-        # 添加调试处理程序（必须放在第一位）
-        application.add_handler(MessageHandler(filters.ALL, debug_updates), group=-1)
-        
-        # 添加常规处理程序
+        # 添加命令处理程序
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("photo", photo_command))
-        application.add_handler(CommandHandler("video", video_command))
-        application.add_handler(CommandHandler("admin", admin_command))
+        application.add_handler(CommandHandler("search", search))
+        application.add_handler(CommandHandler("latest", latest_activities))
         application.add_handler(CommandHandler("refresh", refresh_command))
         
         # 添加回调查询处理程序
         application.add_handler(CallbackQueryHandler(activity_details, pattern="^activity_"))
-        application.add_handler(CallbackQueryHandler(gallery_callback, pattern="^gallery_"))
         
         # 添加消息处理程序
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -925,60 +745,22 @@ def main():
         # 添加错误处理程序
         application.add_error_handler(error_handler)
         
-        logger.info("成功添加所有处理程序")
-
-        # 确保没有其他实例在运行
-        logger.info("检查是否有其他机器人实例在运行...")
-        pid = os.getpid()
-        logger.info(f"当前进程 PID: {pid}")
-        
-        # 添加重试逻辑和更好的错误处理
-        max_retries = 5
-        retry_delay = 10  # 秒
-        
-        logger.info("开始运行机器人...")
-        for attempt in range(max_retries):
-            try:
-                # 启动机器人
-                logger.info(f"尝试启动机器人 (尝试 {attempt+1}/{max_retries})")
-                port = find_available_port(5000, 5100)  # 在5000-5100范围内找可用端口
-                application.run_polling(
-                    poll_interval=1.0,
-                    timeout=30,
-                    read_timeout=30,
-                    write_timeout=30,
-                    connect_timeout=30,
-                    pool_timeout=30,
-                    drop_pending_updates=True,
-                    allowed_updates=None,  # 允许所有类型的更新
-                    host='0.0.0.0',
-                    port=port
-                )
-                logger.info("机器人成功运行")
-                break  # 如果成功，退出重试循环
-                
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    logger.warning(f"连接错误: {e}. {retry_delay} 秒后重试... (尝试 {attempt+1}/{max_retries})")
-                    time.sleep(retry_delay)
-                else:
-                    logger.error(f"{max_retries} 次尝试后连接失败。退出。")
-                    raise
+        # 启动机器人
+        logger.info("机器人已启动并正在轮询更新...")
+        application.run_polling()
+    except KeyboardInterrupt:
+        logger.info("收到键盘中断，正在退出...")
     except Exception as e:
-        logger.error(f"初始化机器人时发生错误: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise
+        logger.critical(f"启动机器人时出错: {e}", exc_info=True)
+    finally:
+        # 清理锁文件
+        try:
+            if os.path.exists(LOCK_FILE):
+                os.remove(LOCK_FILE)
+                logger.info("已移除锁文件")
+        except:
+            pass
 
-if __name__ == '__main__':
-    logger.info("启动 Telegram 机器人程序")
-    # 设置数据库
-    setup_database()
-    # 初始化按钮检查时间
-    if os.path.exists(BUTTON_UPDATE_FLAG):
-        last_button_check = os.path.getmtime(BUTTON_UPDATE_FLAG)
-    else:
-        with open(BUTTON_UPDATE_FLAG, 'w') as f:
-            last_button_check = time.time()
-            f.write(str(last_button_check))
+# ======== 启动程序 ========
+if __name__ == "__main__":
     main() 
