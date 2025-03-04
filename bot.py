@@ -108,6 +108,9 @@ def get_main_keyboard():
 
 # 创建数据库和表
 def setup_database():
+    logger.info(f"当前用户: {os.getuid()}({os.geteuid()})")
+    logger.info(f"数据库绝对路径: {os.path.abspath(DB_PATH)}")
+    
     # 添加目录创建逻辑
     db_dir = os.path.dirname(DB_PATH)
     if not os.path.exists(db_dir):
@@ -117,12 +120,21 @@ def setup_database():
         except Exception as e:
             logger.error(f"创建数据库目录失败: {e}")
             raise
-
+    
+    # 在目录创建后添加
+    logger.info(f"目录权限: {oct(os.stat(db_dir).st_mode)}")
+    logger.info(f"用户是否有写权限: {os.access(db_dir, os.W_OK)}")
+    
     # 添加更详细的错误处理
     try:
         conn = sqlite3.connect(DB_PATH, timeout=30)  # 添加超时参数
         cursor = conn.cursor()
         logger.info(f"成功连接到数据库: {DB_PATH}")
+        
+        # 在连接数据库前添加
+        logger.info(f"文件存在: {os.path.exists(DB_PATH)}")
+        if os.path.exists(DB_PATH):
+            logger.info(f"文件权限: {oct(os.stat(DB_PATH).st_mode)}")
         
         # 创建活动表
         cursor.execute('''
@@ -190,7 +202,7 @@ def setup_database():
             buttons = [
                 (0, 0, "🔍 搜索"), (0, 1, "📢 最新活动"),
                 (1, 0, "🏠 主页"), (1, 1, "👤 个人中心"),
-                (2, 0, "�� 图片展示"), (2, 1, "📞 联系我们"),
+                (2, 0, "📸 图片展示"), (2, 1, "📞 联系我们"),
                 (3, 0, "❓ 帮助"), (3, 1, "")
             ]
             cursor.executemany("INSERT INTO buttons (row, column, text) VALUES (?, ?, ?)", buttons)
