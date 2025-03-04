@@ -7,24 +7,53 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import sqlite3
-from datetime import datetime
-from telegram import ReplyKeyboardMarkup, KeyboardButton, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from datetime import datetime, timedelta
+from telegram import ReplyKeyboardMarkup, KeyboardButton, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram import InputMediaPhoto, InputMediaVideo
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, Defaults, ContextTypes
 from telegram.ext import CallbackQueryHandler, ConversationHandler, JobQueue
 import fcntl
 import socket
 from flask import Flask
+import requests
+import threading
+import signal
+from logging.handlers import RotatingFileHandler
+from telegram.error import TelegramError
 
-# 设置更详细的日志记录
+# 创建日志目录
+os.makedirs('/opt/tg-bot/logs', exist_ok=True)
+
+# 配置日志
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG  # 改为 DEBUG 级别以获取更多信息
+    level=logging.INFO
 )
+
+# 添加文件处理器
+file_handler = RotatingFileHandler(
+    '/opt/tg-bot/logs/bot.log',
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5
+)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# 获取根日志记录器并添加文件处理器
+root_logger = logging.getLogger()
+root_logger.addHandler(file_handler)
+
+# 创建日志记录器
 logger = logging.getLogger(__name__)
 
-# 数据库设置
-DB_PATH = "/opt/tg-bot/data/bot_data.db"
+# 设置变量和常量
+TOKEN = "your_bot_token_here"  # 替换为您的实际token
+API_URL = "your_api_url_here"  # 替换为您的API URL
+DB_PATH = "/opt/tg-bot/data/bot_data.db"  # 数据库文件路径
+LOCK_FILE = "/opt/tg-bot/bot.lock"
+BUTTON_UPDATE_FLAG = False  # 按钮更新标志
+
+# 确保数据目录存在
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 # 按钮更新标志文件路径
 BUTTON_UPDATE_FLAG = os.path.join(os.path.dirname(__file__), 'button_update.flag')
@@ -301,7 +330,7 @@ async def latest_activities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # 创建活动列表消息
-    message = "�� 最新活动：\n\n"
+    message = "🆕 最新活动：\n\n"
     for i, activity in enumerate(activities, 1):
         message += f"{i}. {activity['title']} - {activity['date']}\n"
         message += f"   {activity['description']}\n\n"
