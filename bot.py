@@ -21,6 +21,16 @@ import signal
 from logging.handlers import RotatingFileHandler
 from telegram.error import TelegramError
 
+# 尝试导入config.py中的BOT_TOKEN
+try:
+    from config import BOT_TOKEN
+except ImportError:
+    BOT_TOKEN = None
+    print("警告: 无法导入config.py模块，将尝试其他方式获取token")
+except Exception as e:
+    BOT_TOKEN = None
+    print(f"警告: 导入config.py时出错: {e}")
+
 # 创建日志目录
 os.makedirs('/opt/tg-bot/logs', exist_ok=True)
 
@@ -46,7 +56,7 @@ root_logger.addHandler(file_handler)
 logger = logging.getLogger(__name__)
 
 # 设置变量和常量
-TOKEN = "7988564533:AAFcVl6nUY-jRYhfpBORvRpC_An0WLSa4CY"  # 使用您从BotFather获取的实际token
+TOKEN = BOT_TOKEN  # 从config.py导入的token
 API_URL = "your_api_url_here"  # 替换为您的API URL
 DB_PATH = "/opt/tg-bot/data/bot_data.db"  # 数据库文件路径
 LOCK_FILE = "/opt/tg-bot/bot.lock"
@@ -806,10 +816,15 @@ def main():
         sys.exit(1)
     
     """启动机器人。"""
-    # 从环境变量获取 token
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    # 获取bot token (按优先级顺序尝试不同来源)
+    token = None
     
-    # 如果环境变量未设置，尝试从配置文件读取
+    # 1. 尝试从环境变量获取
+    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    if token:
+        logger.info("已从环境变量TELEGRAM_BOT_TOKEN获取token")
+    
+    # 2. 尝试从config.json获取
     if not token:
         try:
             config_path = os.path.join(os.path.dirname(__file__), 'config.json')
@@ -817,8 +832,44 @@ def main():
                 with open(config_path, 'r') as f:
                     config = json.load(f)
                     token = config.get('token')
+                    if token:
+                        logger.info("已从config.json获取token")
         except Exception as e:
-            logger.error(f"读取配置文件出错: {e}")
+            logger.warning(f"从config.json读取token时出错: {e}")
+    
+    # 3. 尝试从config.py获取
+    if not token:
+        try:
+            import config
+            token = getattr(config, 'BOT_TOKEN', None)
+            if token:
+                logger.info("已从config.py获取token")
+        except ImportError:
+            logger.warning("未找到config.py模块")
+        except Exception as e:
+            logger.warning(f"从config.py读取token时出错: {e}")
+    
+    # 4. 使用代码中定义的TOKEN变量
+    if not token:
+        try:
+            # 使用全局变量TOKEN（如果已经导入）
+            token = TOKEN
+            if token and token != "your_bot_token_here":
+                logger.info("使用代码中定义的TOKEN变量")
+        except NameError:
+            logger.warning("未找到代码中定义的TOKEN变量")
+    
+    # 5. 再次检查config.py中的BOT_TOKEN变量（直接读取文件）
+    if not token:
+        try:
+            from importlib import import_module
+            config_module = import_module('config')
+            if hasattr(config_module, 'BOT_TOKEN'):
+                token = config_module.BOT_TOKEN
+                if token:
+                    logger.info("已从config模块导入BOT_TOKEN")
+        except Exception as e:
+            logger.warning(f"导入config模块时出错: {e}")
     
     if not token:
         logger.error("未找到Telegram Bot Token，请设置环境变量TELEGRAM_BOT_TOKEN或在config.json中配置")
