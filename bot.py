@@ -22,7 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # 数据库设置
-DB_PATH = "/opt/telegram_bot/bot_data.db"
+DB_PATH = "/opt/tg-bot/data/bot_data.db"
 
 # 按钮更新标志文件路径
 BUTTON_UPDATE_FLAG = os.path.join(os.path.dirname(__file__), 'button_update.flag')
@@ -108,95 +108,118 @@ def get_main_keyboard():
 
 # 创建数据库和表
 def setup_database():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # 创建活动表
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS activities (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        description TEXT,
-        date TEXT,
-        image_url TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-    
-    # 创建用户表
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY,
-        username TEXT,
-        first_name TEXT,
-        last_name TEXT,
-        language_code TEXT,
-        last_activity TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-    
-    # 创建响应表
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS responses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        trigger_text TEXT NOT NULL,
-        response_text TEXT NOT NULL,
-        has_image INTEGER DEFAULT 0,
-        image_url TEXT,
-        version INTEGER DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-    
-    # 创建按钮表
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS buttons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        row INTEGER NOT NULL,
-        column INTEGER NOT NULL,
-        text TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-    
-    # 插入一些示例数据
-    # 活动
-    cursor.execute("SELECT COUNT(*) FROM activities")
-    if cursor.fetchone()[0] == 0:
-        activities = [
-            ("周末音乐节", "来体验西安最热门的音乐盛宴！", "2025-03-08 20:00", "https://example.com/music.jpg"),
-            ("美食品鉴会", "品尝西安特色美食，感受舌尖上的陕西。", "2025-03-09 14:00", "https://example.com/food.jpg"),
-            ("电影首映礼", "最新大片抢先看，与明星近距离接触。", "2025-03-15 19:00", "https://example.com/movie.jpg")
-        ]
-        cursor.executemany("INSERT INTO activities (title, description, date, image_url) VALUES (?, ?, ?, ?)", activities)
-    
-    # 初始化按钮数据
-    cursor.execute("SELECT COUNT(*) FROM buttons")
-    if cursor.fetchone()[0] == 0:
-        buttons = [
-            (0, 0, "🔍 搜索"), (0, 1, "📢 最新活动"),
-            (1, 0, "🏠 主页"), (1, 1, "👤 个人中心"),
-            (2, 0, "📸 图片展示"), (2, 1, "📞 联系我们"),
-            (3, 0, "❓ 帮助"), (3, 1, "")
-        ]
-        cursor.executemany("INSERT INTO buttons (row, column, text) VALUES (?, ?, ?)", buttons)
-        logger.info("初始化按钮数据完成")
-    
-    # 初始化响应数据
-    cursor.execute("SELECT COUNT(*) FROM responses")
-    if cursor.fetchone()[0] == 0:
-        responses = [
-            ("🔍 搜索", "请输入您想搜索的西安景点或活动:", 0, ""),
-            ("🏠 主页", "欢迎访问西安娱乐导航主页！\n\n这里汇集了西安最新、最热门的活动信息。", 0, ""),
-            ("❓ 帮助", "有任何问题，请直接在对话框中输入您的问题，或使用键盘按钮浏览不同功能。", 0, "")
-        ]
-        cursor.executemany("INSERT INTO responses (trigger_text, response_text, has_image, image_url) VALUES (?, ?, ?, ?)", responses)
-        logger.info("初始化响应数据完成")
-    
-    conn.commit()
-    conn.close()
-    logger.info("数据库设置完成")
+    # 添加目录创建逻辑
+    db_dir = os.path.dirname(DB_PATH)
+    if not os.path.exists(db_dir):
+        try:
+            os.makedirs(db_dir, exist_ok=True)
+            logger.info(f"成功创建数据库目录: {db_dir}")
+        except Exception as e:
+            logger.error(f"创建数据库目录失败: {e}")
+            raise
+
+    # 添加更详细的错误处理
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=30)  # 添加超时参数
+        cursor = conn.cursor()
+        logger.info(f"成功连接到数据库: {DB_PATH}")
+        
+        # 创建活动表
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS activities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT,
+            date TEXT,
+            image_url TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # 创建用户表
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            language_code TEXT,
+            last_activity TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # 创建响应表
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS responses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trigger_text TEXT NOT NULL,
+            response_text TEXT NOT NULL,
+            has_image INTEGER DEFAULT 0,
+            image_url TEXT,
+            version INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # 创建按钮表
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS buttons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            row INTEGER NOT NULL,
+            column INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        
+        # 插入一些示例数据
+        # 活动
+        cursor.execute("SELECT COUNT(*) FROM activities")
+        if cursor.fetchone()[0] == 0:
+            activities = [
+                ("周末音乐节", "来体验西安最热门的音乐盛宴！", "2025-03-08 20:00", "https://example.com/music.jpg"),
+                ("美食品鉴会", "品尝西安特色美食，感受舌尖上的陕西。", "2025-03-09 14:00", "https://example.com/food.jpg"),
+                ("电影首映礼", "最新大片抢先看，与明星近距离接触。", "2025-03-15 19:00", "https://example.com/movie.jpg")
+            ]
+            cursor.executemany("INSERT INTO activities (title, description, date, image_url) VALUES (?, ?, ?, ?)", activities)
+        
+        # 初始化按钮数据
+        cursor.execute("SELECT COUNT(*) FROM buttons")
+        if cursor.fetchone()[0] == 0:
+            buttons = [
+                (0, 0, "🔍 搜索"), (0, 1, "📢 最新活动"),
+                (1, 0, "🏠 主页"), (1, 1, "👤 个人中心"),
+                (2, 0, "�� 图片展示"), (2, 1, "📞 联系我们"),
+                (3, 0, "❓ 帮助"), (3, 1, "")
+            ]
+            cursor.executemany("INSERT INTO buttons (row, column, text) VALUES (?, ?, ?)", buttons)
+            logger.info("初始化按钮数据完成")
+        
+        # 初始化响应数据
+        cursor.execute("SELECT COUNT(*) FROM responses")
+        if cursor.fetchone()[0] == 0:
+            responses = [
+                ("🔍 搜索", "请输入您想搜索的西安景点或活动:", 0, ""),
+                ("🏠 主页", "欢迎访问西安娱乐导航主页！\n\n这里汇集了西安最新、最热门的活动信息。", 0, ""),
+                ("❓ 帮助", "有任何问题，请直接在对话框中输入您的问题，或使用键盘按钮浏览不同功能。", 0, "")
+            ]
+            cursor.executemany("INSERT INTO responses (trigger_text, response_text, has_image, image_url) VALUES (?, ?, ?, ?)", responses)
+            logger.info("初始化响应数据完成")
+        
+        conn.commit()
+        conn.close()
+        logger.info("数据库设置完成")
+    except sqlite3.Error as e:
+        logger.error(f"数据库连接失败: {e}")
+        logger.error(f"当前工作目录: {os.getcwd()}")
+        logger.error(f"数据库路径: {os.path.abspath(DB_PATH)}")
+        logger.error(f"目录权限: {oct(os.stat(db_dir).st_mode)[-3:]}")
+        if os.path.exists(DB_PATH):
+            logger.error(f"文件权限: {oct(os.stat(DB_PATH).st_mode)[-3:]}")
+        else:
+            logger.error("数据库文件不存在")
+        raise
 
 # 定义命令处理程序
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
