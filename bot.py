@@ -13,6 +13,8 @@ from telegram import InputMediaPhoto, InputMediaVideo
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, Defaults, ContextTypes
 from telegram.ext import CallbackQueryHandler, ConversationHandler, JobQueue
 import fcntl
+import socket
+from flask import Flask
 
 # 设置更详细的日志记录
 logging.basicConfig(
@@ -299,7 +301,7 @@ async def latest_activities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # 创建活动列表消息
-    message = "📢 最新活动：\n\n"
+    message = "�� 最新活动：\n\n"
     for i, activity in enumerate(activities, 1):
         message += f"{i}. {activity['title']} - {activity['date']}\n"
         message += f"   {activity['description']}\n\n"
@@ -756,6 +758,13 @@ async def refresh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_keyboard()
     )
 
+def find_available_port(start_port, end_port):
+    for port in range(start_port, end_port+1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(('localhost', port)) != 0:
+                return port
+    raise Exception("No available ports")
+
 def main():
     # 创建锁文件
     lock_file = open("/tmp/telegram_bot.lock", "w")
@@ -852,6 +861,7 @@ def main():
             try:
                 # 启动机器人
                 logger.info(f"尝试启动机器人 (尝试 {attempt+1}/{max_retries})")
+                port = find_available_port(5000, 5100)  # 在5000-5100范围内找可用端口
                 application.run_polling(
                     poll_interval=1.0,
                     timeout=30,
@@ -860,7 +870,9 @@ def main():
                     connect_timeout=30,
                     pool_timeout=30,
                     drop_pending_updates=True,
-                    allowed_updates=None  # 允许所有类型的更新
+                    allowed_updates=None,  # 允许所有类型的更新
+                    host='0.0.0.0',
+                    port=port
                 )
                 logger.info("机器人成功运行")
                 break  # 如果成功，退出重试循环
